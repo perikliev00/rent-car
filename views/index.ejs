@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LuxRide - Drive in Luxury</title>
+    <link rel="stylesheet" href="/css/styles.css">
+    <link rel="stylesheet" href="/css/tw.build.css">
+    <link rel="stylesheet" href="/css/animatedBackground.css">
+    <link rel="stylesheet" href="/css/validation.css">
+    <link rel="stylesheet" href="/css/footer.css">
+    <link
+    rel="stylesheet"
+    href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"
+    integrity="sha512-DTOQO9RWCH3ppGqcWaEA1BIZOC6xxalwEsw9c2QQeAIftl+Vegovlnee1c9QX4TctnWMn13TZye+giMm8e2LwA=="
+    crossorigin="anonymous"
+    referrerpolicy="no-referrer"
+  />
+</head>
+<body>
+    <!-- Include Navigation -->
+    <%- include('partials/header') %>
+    
+    <%- include('partials/validationBanner') %>
+
+
+    <%- include('partials/filter', { title, pickupDateISO, returnDateISO, pickupDate, returnDate }) %>
+    <%
+      // Safe defaults for pagination/filters when rendering from other controllers
+      var currentPage = (typeof currentPage !== 'undefined' && currentPage) ? currentPage : 1;
+      var totalPages  = (typeof totalPages  !== 'undefined' && totalPages)  ? totalPages  : 1;
+      var category    = (typeof category    !== 'undefined' && category)    ? category    : '';
+    %>
+    <!-- Categories with pagination -->
+    <section class="container" id="fleet" style="padding:2rem 1rem;">
+      <h2 class="our-cars">Browse by Category</h2>
+      <div class="category-panel">
+        <div class="category-chips">
+          <a href="/" class="chip <%= category === '' ? 'active' : '' %>">All</a>
+          <a href="/?category=automatic" class="chip <%= category === 'automatic' ? 'active' : '' %>">Automatic</a>
+          <a href="/?category=manual" class="chip <%= category === 'manual' ? 'active' : '' %>">Manual</a>
+          <a href="/?category=electric" class="chip <%= category === 'electric' ? 'active' : '' %>">Electric</a>
+          <a href="/?category=hybrid" class="chip <%= category === 'hybrid' ? 'active' : '' %>">Hybrid</a>
+          <a href="/?category=petrol" class="chip <%= category === 'petrol' ? 'active' : '' %>">Petrol</a>
+          <a href="/?category=diesel" class="chip <%= category === 'diesel' ? 'active' : '' %>">Diesel</a>
+          <a href="/?category=seats-2-3" class="chip <%= category === 'seats-2-3' ? 'active' : '' %>">2-3 seats</a>
+          <a href="/?category=seats-4-5" class="chip <%= category === 'seats-4-5' ? 'active' : '' %>">4-5 seats</a>
+          <a href="/?category=seats-6-9" class="chip <%= category === 'seats-6-9' ? 'active' : '' %>">6-9 seats</a>
+        </div>
+      </div>
+      <!-- Reuse the existing car card component as the gallery -->
+      <%- include('partials/carCards', { cars: cars }) %>
+      <div style="display:flex; justify-content:center; align-items:center; gap:.4rem; margin-top:1rem;">
+        <style>
+          .pager { display:flex; gap:.4rem; align-items:center; }
+          .pager a { padding:.5rem .8rem; border:2px solid #ffd23f; border-radius:10px; color:#ffd23f; text-decoration:none; font-weight:800; letter-spacing:.02em; }
+          .pager a.active { background:#ffd23f; color:#111; }
+          .pager a[disabled] { opacity:.4; pointer-events:none; }
+          .pager-mobile { display:none; gap:.5rem; align-items:center; }
+          .pager-mobile .status { color:#ffd23f; font-weight:800; }
+          @media (max-width: 480px) {
+            .pager-desktop { display:none !important; }
+            .pager-mobile { display:flex; }
+            .pager-mobile a { padding:.35rem .6rem; border:2px solid #ffd23f; border-radius:10px; color:#ffd23f; text-decoration:none; font-weight:800; }
+          }
+        </style>
+        <!-- Desktop/full pager -->
+        <div class="pager pager-desktop" style="display:flex; gap:.4rem; flex-wrap:nowrap;">
+        <% const q = category ? ('&category=' + category) : ''; %>
+        <a class="prev" <%= currentPage>1? '':'disabled' %> href="/?page=<%= currentPage - 1 %><%= q %>" aria-label="Previous">‹</a>
+        <% if (currentPage > 2) { %>
+          <a class="" href="/?page=1<%= q %>">1</a>
+          <% if (currentPage > 3) { %>
+            <span style="color:#ffd23f; opacity:.7; padding:0 .25rem;">…</span>
+          <% } %>
+        <% } %>
+        <% for (var p = Math.max(1, currentPage - 1); p <= Math.min(totalPages, currentPage + 1); p++) { %>
+          <% if (p === currentPage) { %>
+            <a class="active" href="#"><%= p %></a>
+          <% } else { %>
+            <a class="" href="/?page=<%= p %><%= q %>"><%= p %></a>
+          <% } %>
+        <% } %>
+        <% if (currentPage < totalPages - 1) { %>
+          <% if (currentPage < totalPages - 2) { %>
+            <span style="color:#ffd23f; opacity:.7; padding:0 .25rem;">…</span>
+          <% } %>
+          <a class="" href="/?page=<%= totalPages %><%= q %>"><%= totalPages %></a>
+        <% } %>
+        <a class="next" <%= currentPage<totalPages? '':'disabled' %> href="/?page=<%= currentPage + 1 %><%= q %>" aria-label="Next">›</a>
+        </div>
+        <!-- Compact mobile pager -->
+        <div class="pager-mobile">
+          <% const q2 = q; %>
+          <a class="prev" <%= currentPage>1? '':'disabled' %> href="/?page=<%= currentPage - 1 %><%= q2 %>" aria-label="Previous">‹ Prev</a>
+          <span class="status"><%= currentPage %>/<%= totalPages %></span>
+          <a class="next" <%= currentPage<totalPages? '':'disabled' %> href="/?page=<%= currentPage + 1 %><%= q2 %>" aria-label="Next">Next ›</a>
+        </div>
+      </div>
+    </section>
+
+    <!-- Include Footer -->
+    <%- include('partials/footer') %>
+
+    <!-- Include JavaScript -->
+    <script src="/js/mobileNav.js"></script>
+    <script src="/js/index.js"></script>
+</body>
+</html>
