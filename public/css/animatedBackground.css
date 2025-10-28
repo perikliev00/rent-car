@@ -1,0 +1,12 @@
+/* Global animated background image */
+body::before{
+  content:"";
+  position:fixed;
+  inset:0;
+  z-index:-1;
+  background:url('/images/bg-pattern.png');
+  background-repeat:repeat;
+  background-size:400px 400px;
+  animation:bgScroll 60s linear infinite;
+}
+@keyframes bgScroll{from{background-position:0 0;}to{background-position:800px 800px;}}
