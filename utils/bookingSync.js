@@ -1,6 +1,7 @@
 const mongoose = require('mongoose');
 const Car = require('../models/Car');
 const Order = require('../models/Order');
+const { parseSofiaDate } = require('./timeZone');
 
 function toUtc(date) {
   const d = new Date(date);
@@ -38,8 +39,11 @@ async function purgeOrphaned(carId, session = null) {
     const rs = new Date(range.startDate);
     const re = new Date(range.endDate);
     return orders.some(o => {
-      const os = new Date(`${o.pickupDate}T${(o.pickupTime || '00:00')}:00Z`);
-      const oe = new Date(`${o.returnDate}T${(o.returnTime || '23:59')}:00Z`);
+      const os = parseSofiaDate(o.pickupDate, o.pickupTime || '00:00');
+      const oe = parseSofiaDate(o.returnDate, o.returnTime || '23:59');
+      if (!os || !oe || Number.isNaN(os.getTime()) || Number.isNaN(oe.getTime())) {
+        return false;
+      }
       return os < re && oe > rs;
     });
   };

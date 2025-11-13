@@ -1,6 +1,9 @@
 const Order = require('../models/Order');
 const Car = require('../models/Car');
 const { formatDateForDisplay, formatLocationName } = require('../utils/dateFormatter');
+const { parseSofiaDate } = require('../utils/timeZone');
+
+const CONTACT_REQUIRED_MESSAGE = 'Full name, phone number, email, and address are required.';
 const OrderModel = require('../models/Order');
 
 exports.getAdminDashboard = async (req, res) => {
@@ -72,7 +75,11 @@ exports.getCreateOrder = async (req, res) => {
                 deliveryPrice: 0,
                 returnPrice: 0,
                 totalPrice: 0,
-                hotelName: ''
+                hotelName: '',
+                fullName: '',
+                phoneNumber: '',
+                email: '',
+                address: ''
             },
             cars
         });
@@ -90,9 +97,9 @@ exports.getCarAvailability = async (req, res) => {
         if (!id || !pickupDate || !returnDate) {
             return res.status(400).json({ ok: false, error: 'Missing required parameters' });
         }
-        const start = new Date(`${pickupDate}T${pickupTime || '00:00'}:00Z`);
-        const end   = new Date(`${returnDate}T${returnTime || '23:59'}:00Z`);
-        if (isNaN(start) || isNaN(end) || start >= end) {
+        const start = parseSofiaDate(pickupDate, pickupTime || '00:00');
+        const end   = parseSofiaDate(returnDate, returnTime || '23:59');
+        if (!start || !end || Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || start >= end) {
             return res.status(400).json({ ok: false, error: 'Invalid date/time range' });
         }
 
@@ -147,6 +154,39 @@ exports.postCreateOrder = async (req, res) => {
             carId
         } = req.body;
 
+        const trimmedContact = {
+            fullName: (fullName || '').trim(),
+            phoneNumber: (phoneNumber || '').trim(),
+            email: (email || '').trim(),
+            address: (address || '').trim(),
+        };
+        if (Object.values(trimmedContact).some(value => !value)) {
+            const cars = await Car.find({}).sort({ name: 1 }).lean();
+            responded = true;
+            return res.status(422).render('admin/order-new', {
+                title: 'Add Order',
+                error: CONTACT_REQUIRED_MESSAGE,
+                defaults: {
+                    pickupDate,
+                    returnDate,
+                    pickupTime,
+                    returnTime,
+                    pickupLocation,
+                    returnLocation,
+                    rentalDays,
+                    deliveryPrice,
+                    returnPrice,
+                    totalPrice,
+                    fullName,
+                    phoneNumber,
+                    email,
+                    address,
+                    hotelName
+                },
+                cars
+            });
+        }
+
         // Validate: check for overlap with existing car bookings (after purge)
         const { purgeExpired, addRange } = require('../utils/bookingSync');
         await purgeExpired(carId, session);
@@ -155,8 +195,11 @@ exports.postCreateOrder = async (req, res) => {
             throw new Error('Car not found');
         }
 
-        const newStart = new Date(`${pickupDate}T${pickupTime || '00:00'}:00Z`);
-        const newEnd   = new Date(`${returnDate}T${returnTime || '23:59'}:00Z`);
+        const newStart = parseSofiaDate(pickupDate, pickupTime || '00:00');
+        const newEnd   = parseSofiaDate(returnDate, returnTime || '23:59');
+        if (!newStart || !newEnd || Number.isNaN(newStart.getTime()) || Number.isNaN(newEnd.getTime()) || newStart >= newEnd) {
+            throw new Error('Invalid pick-up/return range');
+        }
 
         // Re-query overlap from DB (single source of truth)
         const overlapDoc = await Car.findOne({
@@ -205,10 +248,10 @@ exports.postCreateOrder = async (req, res) => {
             deliveryPrice,
             returnPrice,
             totalPrice,
-            fullName,
-            phoneNumber,
-            email,
-            address,
+            fullName: trimmedContact.fullName,
+            phoneNumber: trimmedContact.phoneNumber,
+            email: trimmedContact.email,
+            address: trimmedContact.address,
             hotelName
         }], { session });
 
@@ -246,9 +289,44 @@ exports.postCreateOrder = async (req, res) => {
                 carId
             } = req.body;
 
+            const trimmedContact = {
+                fullName: (fullName || '').trim(),
+                phoneNumber: (phoneNumber || '').trim(),
+                email: (email || '').trim(),
+                address: (address || '').trim(),
+            };
+            if (Object.values(trimmedContact).some(value => !value)) {
+                const cars = await Car.find({}).sort({ name: 1 }).lean();
+                return res.status(422).render('admin/order-new', {
+                    title: 'Add Order',
+                    error: CONTACT_REQUIRED_MESSAGE,
+                    defaults: {
+                        pickupDate,
+                        returnDate,
+                        pickupTime,
+                        returnTime,
+                        pickupLocation,
+                        returnLocation,
+                        rentalDays,
+                        deliveryPrice,
+                        returnPrice,
+                        totalPrice,
+                        fullName,
+                        phoneNumber,
+                        email,
+                        address,
+                        hotelName
+                    },
+                    cars
+                });
+            }
+
             // Re-check overlap straight from DB
-            const start = new Date(`${pickupDate}T${pickupTime || '00:00'}:00Z`);
-            const end   = new Date(`${returnDate}T${returnTime || '23:59'}:00Z`);
+            const start = parseSofiaDate(pickupDate, pickupTime || '00:00');
+            const end   = parseSofiaDate(returnDate, returnTime || '23:59');
+            if (!start || !end || Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || start >= end) {
+                throw new Error('Invalid pick-up/return range');
+            }
             const conflict = await Car.findOne({
                 _id: carId,
                 dates: { $elemMatch: { startDate: { $lt: end }, endDate: { $gt: start } } }
@@ -291,10 +369,10 @@ exports.postCreateOrder = async (req, res) => {
                 deliveryPrice,
                 returnPrice,
                 totalPrice,
-                fullName,
-                phoneNumber,
-                email,
-                address,
+            fullName: trimmedContact.fullName,
+            phoneNumber: trimmedContact.phoneNumber,
+            email: trimmedContact.email,
+            address: trimmedContact.address,
                 hotelName
             });
 
@@ -401,6 +479,18 @@ exports.postEditOrder = async (req, res) => {
             carId
         } = req.body;
 
+        const trimmedContact = {
+            fullName: (fullName || '').trim(),
+            phoneNumber: (phoneNumber || '').trim(),
+            email: (email || '').trim(),
+            address: (address || '').trim(),
+        };
+        if (Object.values(trimmedContact).some(value => !value)) {
+            const error = new Error(CONTACT_REQUIRED_MESSAGE);
+            error.code = 'MISSING_CONTACT';
+            throw error;
+        }
+
         const previousCarId = order.carId.toString();
         const newCarId = (carId && carId.toString()) || previousCarId;
 
@@ -412,10 +502,10 @@ exports.postEditOrder = async (req, res) => {
         order.pickupLocation = pickupLocation;
         order.returnLocation = returnLocation;
         order.hotelName = hotelName;
-        order.fullName = fullName;
-        order.phoneNumber = phoneNumber;
-        order.email = email;
-        order.address = address;
+        order.fullName = trimmedContact.fullName;
+        order.phoneNumber = trimmedContact.phoneNumber;
+        order.email = trimmedContact.email;
+        order.address = trimmedContact.address;
         if (typeof rentalDays !== 'undefined') order.rentalDays = rentalDays;
         order.deliveryPrice = deliveryPrice;
         order.returnPrice = returnPrice;
@@ -423,10 +513,16 @@ exports.postEditOrder = async (req, res) => {
         await order.save({ session });
 
         // Build previous and new ISO datetimes
-        const prevStart = new Date(`${originalPickupDate}T${originalPickupTime || '00:00'}:00Z`);
-        const prevEnd   = new Date(`${originalReturnDate}T${originalReturnTime || '23:59'}:00Z`);
-        const newStart  = new Date(`${pickupDate}T${pickupTime || '00:00'}:00Z`);
-        const newEnd    = new Date(`${returnDate}T${returnTime || '23:59'}:00Z`);
+        const prevStart = parseSofiaDate(originalPickupDate, originalPickupTime || '00:00');
+        const prevEnd   = parseSofiaDate(originalReturnDate, originalReturnTime || '23:59');
+        const newStart  = parseSofiaDate(pickupDate, pickupTime || '00:00');
+        const newEnd    = parseSofiaDate(returnDate, returnTime || '23:59');
+        if (!prevStart || !prevEnd || !newStart || !newEnd ||
+            Number.isNaN(prevStart.getTime()) || Number.isNaN(prevEnd.getTime()) ||
+            Number.isNaN(newStart.getTime()) || Number.isNaN(newEnd.getTime()) ||
+            newStart >= newEnd) {
+            throw new Error('Invalid date/time range');
+        }
 
         const { updateRange, purgeExpired, moveRange } = require('../utils/bookingSync');
         try {
@@ -452,13 +548,31 @@ exports.postEditOrder = async (req, res) => {
         const order = await Order.findById(req.params.id)
           .populate('carId', 'name image price priceTier_1_3 priceTier_7_31 priceTier_31_plus');
         if (order) {
+          order.pickupDate = req.body.pickupDate;
+          order.pickupTime = req.body.pickupTime;
+          order.returnDate = req.body.returnDate;
+          order.returnTime = req.body.returnTime;
+          order.pickupLocation = req.body.pickupLocation;
+          order.returnLocation = req.body.returnLocation;
+          order.hotelName = req.body.hotelName;
+          order.fullName = req.body.fullName;
+          order.phoneNumber = req.body.phoneNumber;
+          order.email = req.body.email;
+          order.address = req.body.address;
+          order.rentalDays = req.body.rentalDays;
+          order.deliveryPrice = req.body.deliveryPrice;
+          order.returnPrice = req.body.returnPrice;
+          order.totalPrice = req.body.totalPrice;
+
           const toISODate = (s) => { if (!s) return ''; if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10); const d = new Date(s); return isNaN(d) ? '' : d.toISOString().slice(0,10); };
           const toHHMM = (s) => { if (!s) return ''; if (/^\d{2}:\d{2}$/.test(s)) return s; const m = String(s).match(/^(\d{1,2}):(\d{2})/); return m ? `${String(m[1]).padStart(2,'0')}:${m[2]}` : ''; };
           // Fetch cars list for the select, as the view expects `cars`
           const cars = await Car.find({}).sort({ name: 1 }).lean();
           return res.status(422).render('admin/order-edit', {
             title: 'Edit Order',
-            error: 'Selected car is already booked in the specified period. Please choose different dates or a different car.',
+            error: (err && err.code === 'MISSING_CONTACT')
+              ? CONTACT_REQUIRED_MESSAGE
+              : 'Selected car is already booked in the specified period. Please choose different dates or a different car.',
             order,
             cars,
             pickupDateISO: toISODate(order.pickupDate),
@@ -482,8 +596,8 @@ exports.postDeleteOrder = async (req, res) => {
         if (!order) return; // nothing to delete
 
         // Build exact start/end used when order was created to remove from car.dates
-        const startDate = new Date(`${order.pickupDate}T${order.pickupTime || '00:00'}:00Z`);
-        const endDate   = new Date(`${order.returnDate}T${order.returnTime || '23:59'}:00Z`);
+        const startDate = parseSofiaDate(order.pickupDate, order.pickupTime || '00:00');
+        const endDate   = parseSofiaDate(order.returnDate, order.returnTime || '23:59');
 
         const { removeRange } = require('../utils/bookingSync');
         await removeRange(order.carId, startDate, endDate, session);

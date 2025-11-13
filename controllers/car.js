@@ -1,6 +1,8 @@
 const Car = require('../models/Car');
 const mongoose = require('mongoose');
 const { formatDateForDisplay } = require('../utils/dateFormatter');
+const { parseSofiaDate } = require('../utils/timeZone');
+const Reservation = require('../models/Reservation');
 
 // ---------------------------------------------
 // Controller: GET /  (home page)
@@ -9,12 +11,10 @@ exports.getHome = async (req, res, next) => {
   try {
     // 1. Fetch all cars
     const cars = await Car.find();
-
     // 2. Default rental span = today ➡️ tomorrow (1 day)
     const now = new Date();
     const tomorrow = new Date(now);
     tomorrow.setDate(now.getDate() + 1);
-
     const pickupDateISO = now.toISOString().split('T')[0];
     const returnDateISO = tomorrow.toISOString().split('T')[0];
     const pickupDate = formatDateForDisplay(pickupDateISO);
@@ -29,8 +29,7 @@ exports.getHome = async (req, res, next) => {
       ...car.toObject(),
       totalPrice: car.price * rentalDays
     }));
-
-    // 4. Render
+    console.log("--------------------------------")
     res.render('index', {
       title: 'Find Perfect Car',
       cars: carsWithTotals,
@@ -140,23 +139,78 @@ exports.postSearchCars = async (req, res) => {
   } else if (returnLoc === 'ravda') {
       returnPrice = deliveryReturnPrices['ravda'];
   }
-    // Build ISO strings
-    const pickupISO = `${pickupDateOnly}T${pickupTime || '00:00'}:00Z`;
-    const returnISO = `${returnDateOnly}T${returnTime || '23:59'}:00Z`;
-
-    const pickupDate = new Date(pickupISO);
-    const returnDate = new Date(returnISO);
+    const pickupDate = parseSofiaDate(pickupDateOnly, pickupTime || '00:00');
+    const returnDate = parseSofiaDate(returnDateOnly, returnTime || '23:59');
 
     /* 2. Rental day count */
     const MS_PER_DAY = 86_400_000;
     const rentalDays = Math.max(1, Math.ceil((returnDate - pickupDate) / MS_PER_DAY));
 
     // Basic validation
-    if (isNaN(pickupDate) || isNaN(returnDate))
+    if (!pickupDate || !returnDate || Number.isNaN(pickupDate.getTime()) || Number.isNaN(returnDate.getTime()))
       return res.status(400).send('Invalid pick‑up or return date / time.');
 
     if (pickupDate > returnDate)
       return res.status(400).send('Pick‑up must be before return.');
+
+    const currentSid = req.session?._sid;
+
+    // 🔥 Find all overlapping reservations (mode: "in process") with different sessionId
+    const overlappingReservations = await Reservation.find({
+      mode: "in process",
+      sessionId: { $ne: currentSid },
+      // overlap condition: (pickupDate <= res.returnDate) && (returnDate >= res.pickupDate)
+      $expr: {
+        $and: [
+          {
+            $lte: [
+              {
+                $dateFromString: {
+                  dateString: {
+                    $concat: [
+                      "$pickupDate",
+                      "T",
+                      { $ifNull: ["$pickupTime", "00:00"] },
+                      ":00"
+                    ]
+                  },
+                  timezone: "Europe/Sofia"
+                }
+              },
+              returnDate
+            ]
+          },
+          {
+            $gte: [
+              {
+                $dateFromString: {
+                  dateString: {
+                    $concat: [
+                      "$returnDate",
+                      "T",
+                      { $ifNull: ["$returnTime", "23:59"] },
+                      ":00"
+                    ]
+                  },
+                  timezone: "Europe/Sofia"
+                }
+              },
+              pickupDate
+            ]
+          }
+        ]
+      }
+    }).select('carId');
+
+    // 🧠 Extract just carIds into array
+    const blockedCarIds = overlappingReservations.map(r => r.carId.toString());
+
+    console.log(
+      "--------------------------------"
+
+    )
+
+    console.log('Blocked car IDs:', blockedCarIds);
 
     /* 3. MongoDB match query: keep cars whose booked ranges DO NOT overlap */
     const match = {
@@ -182,7 +236,6 @@ exports.postSearchCars = async (req, res) => {
     cars.forEach(car => {
       car.totalPrice = car.price * rentalDays+ deliveryPrice + returnPrice;
     });
-
     /* 6. Render */
     res.render('searchResults', {
       title: 'Search Results',

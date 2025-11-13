@@ -6,6 +6,7 @@ const Car = require('../models/Car'); // Make sure this is at the top
 const mongoose = require('mongoose');
 const stripe = require('../config/stripe'); // Ensure you have a Stripe config file
 const Order = require('../models/Order'); // Ensure you have an Order model
+const { parseSofiaDate } = require('../utils/timeZone');
 
 router.post('/create-checkout-session',[body('fullName')
     .notEmpty()
@@ -48,9 +49,12 @@ router.get('/success', async (req, res) => {
     }
 
     try {
-        // Combine pickup and return date with time (assuming a UTC format)
-        const pickupDateTime = new Date(`${order.pickupDate}T${order.pickupTime}:00Z`);
-        const returnDateTime = new Date(`${order.returnDate}T${order.returnTime}:00Z`);
+        // Combine pickup and return date with time using Sofia wall-clock → UTC conversion
+        const pickupDateTime = parseSofiaDate(order.pickupDate, order.pickupTime || '00:00');
+        const returnDateTime = parseSofiaDate(order.returnDate, order.returnTime || '23:59');
+        if (!pickupDateTime || !returnDateTime || Number.isNaN(pickupDateTime.getTime()) || Number.isNaN(returnDateTime.getTime())) {
+            return res.status(400).send('Invalid booking dates.');
+        }
 
         // Update the car document by pushing the new booking into the dates array
         await Car.findByIdAndUpdate(

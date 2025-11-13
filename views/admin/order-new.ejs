@@ -122,10 +122,10 @@
           </select>
         </div>
         <div style="grid-column:1 / -1; border-top:1px dashed #333; padding-top:1rem; display:grid; grid-template-columns: 1fr; gap:.5rem;">
-          <div class="row"><label>Full Name</label><input type="text" name="fullName" placeholder="Customer name"></div>
-          <div class="row"><label>Phone Number</label><input type="text" name="phoneNumber" placeholder="Customer phone"></div>
-          <div class="row"><label>Email</label><input type="email" name="email" placeholder="Customer email"></div>
-          <div class="row"><label>Address</label><input type="text" name="address" placeholder="Customer address"></div>
+          <div class="row"><label>Full Name</label><input type="text" name="fullName" value="<%= defaults.fullName || '' %>" placeholder="Customer name" required></div>
+          <div class="row"><label>Phone Number</label><input type="text" name="phoneNumber" value="<%= defaults.phoneNumber || '' %>" placeholder="Customer phone" required></div>
+          <div class="row"><label>Email</label><input type="email" name="email" value="<%= defaults.email || '' %>" placeholder="Customer email" required></div>
+          <div class="row"><label>Address</label><input type="text" name="address" value="<%= defaults.address || '' %>" placeholder="Customer address" required></div>
         </div>
       </div>
       <div style="margin-top:1rem;display:flex;gap:.5rem;">
@@ -186,7 +186,7 @@
       function parseDateTime(dEl, tEl, fallbackTime) {
         const d = dEl && dEl.value ? dEl.value : '';
         const t = tEl && tEl.value ? tEl.value : fallbackTime;
-        return new Date(`${d}T${t || '00:00'}:00Z`);
+        return new Date(`${d}T${t || '00:00'}`);
       }
 
       function calcDays() {
@@ -221,6 +221,26 @@
         totalEl.value = (base + Number(deliveryEl.value||0) + Number(returnEl.value||0)).toFixed(2);
       }
 
+      const sofiaFormatter = new Intl.DateTimeFormat('en-GB', {
+        timeZone: 'Europe/Sofia',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false
+      });
+
+      function formatSofia(isoString) {
+        const date = new Date(isoString);
+        if (Number.isNaN(date.getTime())) return isoString;
+        const parts = sofiaFormatter.formatToParts(date).reduce((acc, part) => {
+          acc[part.type] = part.value;
+          return acc;
+        }, {});
+        return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}`;
+      }
+
       async function checkAvailability() {
         const carId = carEl.value;
         if(!carId || !pickupDateEl.value || !returnDateEl.value){
@@ -252,7 +272,7 @@
               form.parentNode.insertBefore(node, form);
             }
             const conflictText = (data && data.conflicts && data.conflicts.length)
-              ? `Selected car is already booked in: ${data.conflicts.map(c=>`${c.startDate.slice(0,16).replace('T',' ')} – ${c.endDate.slice(0,16).replace('T',' ')}`).join('; ')}`
+              ? `Selected car is already booked in: ${data.conflicts.map(c=>`${formatSofia(c.startDate)} – ${formatSofia(c.endDate)}`).join('; ')}`
               : 'Selected car is already booked in the specified period.';
             node.textContent = (data && data.error) ? data.error : conflictText;
             setSubmitDisabled(true);

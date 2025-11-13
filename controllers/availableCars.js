@@ -1,6 +1,8 @@
 const Car = require('../models/Car');
 const mongoose = require('mongoose');
 const { validationResult } = require('express-validator');
+const Reservation = require('../models/Reservation');
+const { parseSofiaDate } = require('../utils/timeZone');
 // ---------------------------------------------
 // Controller: POST /search  (search results)
 // ---------------------------------------------
@@ -152,12 +154,8 @@ exports.postSearchCars = async (req, res) => {
   } else if (returnLoc === 'ravda') {
       returnPrice = deliveryReturnPrices['ravda'];
   }
-    // Build ISO strings
-    const pickupISO = `${pickupDateOnly}T${pickupTime || '00:00'}:00Z`;
-    const returnISO = `${returnDateOnly}T${returnTime || '23:59'}:00Z`;
-
-    const pickupDate = new Date(pickupISO);
-    const returnDate = new Date(returnISO);
+    const pickupDate = parseSofiaDate(pickupDateOnly, pickupTime || '00:00');
+    const returnDate = parseSofiaDate(returnDateOnly, returnTime || '23:59');
 
     /* 2. Rental day count */
     const MS_PER_DAY = 86_400_000;
@@ -166,10 +164,68 @@ exports.postSearchCars = async (req, res) => {
 
 
     // Basic validation
-    if (isNaN(pickupDate) || isNaN(returnDate))
-      return res.status(400).send('Invalid pick‑up or return date / time.');
+    if (!pickupDate || !returnDate || Number.isNaN(pickupDate.getTime()) || Number.isNaN(returnDate.getTime()))
+      return res.status(400).send('Invalid pick-up or return date / time.');
 
-   
+    const currentSid = req.session?._sid;
+
+    // 🔥 Find all overlapping reservations (mode: "in process") with different sessionId
+    const overlappingReservations = await Reservation.find({
+      mode: "in process",
+      sessionId: { $ne: currentSid },
+      // overlap condition: (pickupDate <= res.returnDate) && (returnDate >= res.pickupDate)
+      $expr: {
+        $and: [
+          {
+            $lte: [
+              {
+                $dateFromString: {
+                  dateString: {
+                    $concat: [
+                      "$pickupDate",
+                      "T",
+                      { $ifNull: ["$pickupTime", "00:00"] },
+                      ":00"
+                    ]
+                  },
+                  timezone: "Europe/Sofia"
+                }
+              },
+              returnDate
+            ]
+          },
+          {
+            $gte: [
+              {
+                $dateFromString: {
+                  dateString: {
+                    $concat: [
+                      "$returnDate",
+                      "T",
+                      { $ifNull: ["$returnTime", "23:59"] },
+                      ":00"
+                    ]
+                  },
+                  timezone: "Europe/Sofia"
+                }
+              },
+              pickupDate
+            ]
+          }
+        ]
+      }
+    }).select('carId');
+
+    // 🧠 Extract just carIds into array
+    const blockedCarIds = overlappingReservations.map(r => r.carId.toString());
+
+    console.log(
+      "--------------------------------"
+    )
+    console.log('Blocked car IDs:', blockedCarIds);   // (already in your code)
+    console.log(
+      "--------------------------------"
+    )
 
     /* 3. MongoDB match query: keep cars whose booked ranges DO NOT overlap */
     const match = {
@@ -187,9 +243,24 @@ exports.postSearchCars = async (req, res) => {
     /* 4. Query DB: return all matching cars (no grouping by name) */
     const cars = await Car.find(match).lean();
 
-    // 5. Attach total price per car
-    cars.forEach(car => {
+    // NEW: log pre-filter count
+    console.log(`✅ Cars before filtering by blocked list: ${cars.length}`);  // NEW
 
+    // NEW: simple filter by blocked IDs (keep your style)
+    const blockedSet = new Set(blockedCarIds.map(String));                   // NEW
+    const filteredCars = cars.filter(car => {                                 // NEW
+      const isBlocked = blockedSet.has(String(car._id));                      // NEW
+      if (isBlocked) {                                                        // NEW
+        console.log(`❌ Skipping blocked car ${car._id}`);                    // NEW
+      }                                                                       // NEW
+      return !isBlocked;                                                      // NEW
+    });                                                                        // NEW
+
+    // NEW: log post-filter count
+    console.log(`✅ Cars after filtering: ${filteredCars.length}`);            // NEW
+
+    // 5. Attach total price per car
+    filteredCars.forEach(car => {                                            // UPDATED: iterate filteredCars
       if(rentalDays > 1 && rentalDays <= 3) {
         car.price = car.price * 0.9; // 10% discount for rentals longer than 1 day
       }
@@ -207,6 +278,9 @@ exports.postSearchCars = async (req, res) => {
       car._id = car._id.toString(); // Convert ObjectId to string for easier handling in templates
     });
 
+    // NEW: show final ids + totals
+    console.log('💰 Final cars:', filteredCars.map(c => ({ id: c._id, total: c.totalPrice }))); // NEW
+
     /* 6. Render */
     res.render('searchResults', {
       title: 'Search Results',
@@ -219,7 +293,7 @@ exports.postSearchCars = async (req, res) => {
       returnTime,
       deliveryPrice,
       returnPrice,
-      cars
+      cars: filteredCars                                                   // UPDATED: pass filteredCars
     });
   } catch (err) {
     console.error(err);
