@@ -1,3 +1,5 @@
+require('dotenv').config();
+
 // app.js
 // ─────────────────────────────────────────────────────────────
 // Imports
@@ -19,16 +21,16 @@ const authRoutes    = require('./routes/authRoutes');
 // Models
 const Car = require('./models/Car');
 const Reservation = require('./models/Reservation'); // use reservations in housekeeping
+const { ACTIVE_RESERVATION_STATUSES } = require('./utils/reservationHelpers');
 
 // ─────────────────────────────────────────────────────────────
 // Constants
 const app = express();
-const FIVE_MIN = 5 * 60 * 1000; // 5 minutes idle timeout
+const SESSION_IDLE_MS = 20 * 60 * 1000; // 20 minutes idle timeout
 const isProd = process.env.NODE_ENV === 'production';
 
 // Mongo
-const MONGODB_URI =
-  'mongodb+srv://perikliev00:bA8NgkFvAiOC2WU6@rentacar.vqfa4od.mongodb.net/cars?retryWrites=true&w=majority&appName=RentACar';
+const MONGODB_URI = process.env.MONGODB_URI;
 
 // ─────────────────────────────────────────────────────────────
 // Static + Templating
@@ -46,7 +48,7 @@ app.use(bodyParser.json());
 const store = new MongoDBStore({
   uri: MONGODB_URI,
   collection: 'sessions',
-  expires: FIVE_MIN, // TTL (server-side). Each write/refresh extends this when using "rolling".
+  expires: SESSION_IDLE_MS, // TTL (server-side). Each write/refresh extends this when using "rolling".
 });
 
 store.on('error', (err) => {
@@ -61,7 +63,7 @@ if (isProd) {
 // Sessions (✅ works on localhost + prod)
 app.use(session({
   name: 'sid',
-  secret: 'change-me',   // TODO: move to env var
+  secret: process.env.SESSION_SECRET || 'change-me',
   store,
   resave: false,
   saveUninitialized: false, // create session only when you set something
@@ -70,7 +72,7 @@ app.use(session({
     httpOnly: true,
     sameSite: 'lax',
     secure: isProd,         // false on localhost (HTTP), true in prod (HTTPS)
-    maxAge: FIVE_MIN,       // browser expiry (idle-based thanks to rolling)
+    maxAge: SESSION_IDLE_MS,       // browser expiry (idle-based thanks to rolling)
   },
 }));
 
@@ -82,7 +84,6 @@ app.use(session({
 // Place BEFORE routes so the session exists on first hit
 app.use((req, res, next) => {
   if (!req.session.isPaid) req.session.isPaid = false;
-  if (!req.session.orderDetails) req.session.orderDetails = {};
   // Mirror the id inside the session doc for convenience
   if (req.session._sid !== req.sessionID) req.session._sid = req.sessionID;
   next();
@@ -182,7 +183,7 @@ async function cleanUpOutdatedDates() {
 
 
 
-// 60s: remove "in process" reservations whose session no longer exists
+// Housekeep reservations whose holds expired or sessions vanished
 async function cleanUpAbandonedReservations() {
   try {
     const nowUTC = new Date();
@@ -192,17 +193,25 @@ async function cleanUpAbandonedReservations() {
       .toArray();
 
     const activeSids = sessions.map(s => String(s._id));
-    const deleted = await Reservation.deleteMany({
-      mode: 'in process',
-      $or: [
-        { sessionId: { $exists: false } },
-        { sessionId: null },
-        { sessionId: { $nin: activeSids } }
-      ]
-    });
+    const orCriteria = [
+      { holdExpiresAt: { $lte: nowUTC } },
+      { sessionId: { $exists: false } },
+      { sessionId: null },
+    ];
+    if (activeSids.length) {
+      orCriteria.push({ sessionId: { $nin: activeSids } });
+    }
 
-    if (deleted.deletedCount) {
-      console.log(`🧽 Removed ${deleted.deletedCount} abandoned in-process reservation(s) (session missing).`);
+    const updated = await Reservation.updateMany(
+      {
+        status: { $in: ACTIVE_RESERVATION_STATUSES },
+        $or: orCriteria
+      },
+      { $set: { status: 'expired', holdExpiresAt: nowUTC } }
+    );
+
+    if (updated.modifiedCount) {
+      console.log(`🧽 Marked ${updated.modifiedCount} reservation(s) as expired or abandoned.`);
     }
   } catch (err) {
     console.error('Cleanup error (abandoned reservations):', err);
@@ -220,8 +229,8 @@ async function cleanUpAbandonedReservations() {
     await cleanUpOutdatedDates();
     await cleanUpAbandonedReservations();
 
-    setInterval(cleanUpOutdatedDates, 10_000);          // every 10 sec
-    setInterval(cleanUpAbandonedReservations, 60_000);  // every 1 min
+    setInterval(cleanUpOutdatedDates, 3 * 60 * 1000);          // every 3 min
+    setInterval(cleanUpAbandonedReservations, 3 * 60 * 1000);  // every 3 min
 
     const PORT = process.env.PORT || 3000;
     app.listen(PORT, () => {

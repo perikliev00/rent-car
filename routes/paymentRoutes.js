@@ -1,12 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const paymentController = require('../controllers/payment');
-const { body, validationResult } = require('express-validator');
-const Car = require('../models/Car'); // Make sure this is at the top
-const mongoose = require('mongoose');
-const stripe = require('../config/stripe'); // Ensure you have a Stripe config file
-const Order = require('../models/Order'); // Ensure you have an Order model
-const { parseSofiaDate } = require('../utils/timeZone');
+const { body } = require('express-validator');
 
 router.post('/create-checkout-session',[body('fullName')
     .notEmpty()
@@ -29,77 +24,8 @@ router.post('/create-checkout-session',[body('fullName')
     .withMessage('Please enter your hotel name'),
 ], paymentController.createCheckoutSession);
 
-router.get('/success', async (req, res) => {
-  const sessionId       = req.query.session_id;
-  const storedSessionId = req.session.stripeSessionId;
-  const order           = req.session.orderDetails;   
-  if (!sessionId || sessionId !== storedSessionId) {
-    return res.status(403).send('Invalid or expired checkout session.');
-  }
+router.post('/reservations/release', paymentController.releaseActiveReservation);
+router.get('/success', paymentController.handleCheckoutSuccess);
+router.get('/cancel', paymentController.handleCheckoutCancel);
 
-  // 3) махни го от сесията, за да не може да се ползва повторно
-  delete req.session.stripeSessionId;
-   // 4) допълнителна валидация със Stripe API
-    const stripeSession = await stripe.checkout.sessions.retrieve(sessionId);
-    if (stripeSession.payment_status !== 'paid') {
-      return res.status(400).send('Payment not completed.');
-    }
-    if (!order) {
-        return res.status(400).send('No order details found.');
-    }
-
-    try {
-        // Combine pickup and return date with time using Sofia wall-clock → UTC conversion
-        const pickupDateTime = parseSofiaDate(order.pickupDate, order.pickupTime || '00:00');
-        const returnDateTime = parseSofiaDate(order.returnDate, order.returnTime || '23:59');
-        if (!pickupDateTime || !returnDateTime || Number.isNaN(pickupDateTime.getTime()) || Number.isNaN(returnDateTime.getTime())) {
-            return res.status(400).send('Invalid booking dates.');
-        }
-
-        // Update the car document by pushing the new booking into the dates array
-        await Car.findByIdAndUpdate(
-            order.carId,
-            {
-                $push: {
-                    dates: {
-                        startDate: pickupDateTime,
-                        endDate: returnDateTime,
-                    }
-                }
-            }
-        );
-
-        // Mark the session as paid before opening the protected route
-        // Optionally clear order details if you no longer need them
-        await Order.create({
-        carId: order.carId,
-        pickupDate: order.pickupDate,
-        pickupTime: order.pickupTime,
-        returnDate: order.returnDate,
-        returnTime: order.returnTime,
-        pickupLocation: order.pickupLocation,
-        returnLocation: order.returnLocation,
-        rentalDays: order.rentalDays,
-        deliveryPrice: order.deliveryPrice,
-        returnPrice: order.returnPrice,
-        totalPrice: order.totalPrice,
-        fullName: order.fullName,
-        phoneNumber: order.phoneNumber,
-        email: order.email,
-        address: order.address,
-        hotelName: order.hotelName,
-      });
-        req.session.orderDetails = null;
-
-        // Render success page
-        res.render('success', { title: 'Payment Success' });
-    } catch (err) {
-        console.error(err);
-        res.status(500).send('Could not update booking.');
-    }
-});
-router.get('/cancel', (req, res) => {
-    res.send('Payment canceled. Please try again.');
-    console.log(req.session.orderDetails);
-});
 module.exports = router;

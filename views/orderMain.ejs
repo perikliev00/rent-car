@@ -19,11 +19,43 @@
     crossorigin="anonymous"
     referrerpolicy="no-referrer"
   />
+  <style>
+    .existing-reservation-banner {
+      background: rgba(239, 68, 68, 0.1);
+      border: 1px solid #ef4444;
+      border-radius: 8px;
+      padding: 1rem;
+      margin-bottom: 1.5rem;
+      color: #fecaca;
+    }
+    .existing-reservation-banner p {
+      margin: 0 0 0.5rem 0;
+    }
+  </style>
 </head>
 <body class="order-page">
     <%- include('partials/header') %>
 
     <main class="new-container">
+        <% if (typeof existingReservation !== 'undefined' && existingReservation) { %>
+          <section class="existing-reservation-banner">
+            <p>
+              You already have an active reservation for
+              <strong><%= existingReservation.carName %></strong>
+              from <%= existingReservation.pickupDate %> to <%= existingReservation.returnDate %>
+              <% if (typeof existingReservation.totalPrice !== 'undefined' && existingReservation.totalPrice !== null) { %>
+                (total €<%= Number(existingReservation.totalPrice).toFixed(2) %>)
+              <% } %>.
+              Please finish or release it before starting another booking.
+            </p>
+            <form action="/reservations/release" method="POST" style="margin-top:0.5rem;">
+              <% if (typeof releaseRedirect !== 'undefined' && releaseRedirect) { %>
+                <input type="hidden" name="redirect" value="<%= releaseRedirect %>">
+              <% } %>
+              <button type="submit" class="new-btn" style="background:#ef4444;border:none;">Release reservation</button>
+            </form>
+          </section>
+        <% } %>
         <!-- Order Details Section -->
          <%- include('partials/orderDetails', {
             car,

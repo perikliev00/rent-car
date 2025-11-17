@@ -34,7 +34,7 @@ async function purgeOrphaned(carId, session = null) {
   if (!carId) return;
   const car = await Car.findById(carId).session(session || null).lean();
   if (!car || !Array.isArray(car.dates) || car.dates.length === 0) return;
-  const orders = await Order.find({ carId }).session(session || null).lean();
+  const orders = await Order.find({ carId, isDeleted: { $ne: true } }).session(session || null).lean();
   const hasOverlapWithAnyOrder = (range) => {
     const rs = new Date(range.startDate);
     const re = new Date(range.endDate);
@@ -92,10 +92,39 @@ async function moveRange(prevCarId, newCarId, prevStart, prevEnd, newStart, newE
   await Car.updateOne({ _id: newCarId }, { $push: { dates: { startDate: ns, endDate: ne } } }, { session });
 }
 
-async function removeRange(carId, start, end, session) {
-  const s = toUtc(start); const e = toUtc(end);
-  await Car.updateOne({ _id: carId }, { $pull: { dates: { startDate: s, endDate: e } } }, { session });
-  await purgeExpired(carId, session);
+async function removeRange(carId, startDate, endDate, session) {
+  if (!carId || !startDate || !endDate) return;
+
+  await Car.updateOne(
+    { _id: carId },
+    {
+      $pull: {
+        dates: {
+          startDate: startDate,
+          endDate: endDate,
+        },
+      },
+    },
+    { session }
+  );
+}
+
+async function expireFinishedOrders(session = null) {
+  const now = new Date();
+  await Order.updateMany(
+    {
+      returnDate: { $lte: now },
+      status: { $nin: ['expired', 'cancelled'] },
+      isDeleted: { $ne: true },
+    },
+    {
+      $set: {
+        status: 'expired',
+        expiredAt: now,
+      },
+    },
+    { session }
+  );
 }
 
 module.exports = {
@@ -105,6 +134,7 @@ module.exports = {
   updateRange,
   moveRange,
   removeRange,
+  expireFinishedOrders,
   toUtc
 };
 

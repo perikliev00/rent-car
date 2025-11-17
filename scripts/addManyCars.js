@@ -1,7 +1,9 @@
+require('dotenv').config();
+
 const mongoose = require('mongoose');
 const Car = require('../models/Car');
 
-const MONGODB_URI = 'mongodb+srv://perikliev00:bA8NgkFvAiOC2WU6@rentacar.vqfa4od.mongodb.net/cars?retryWrites=true&w=majority&appName=RentACar';
+const MONGODB_URI = process.env.MONGODB_URI;
 
 async function addManyCars() {
   try {

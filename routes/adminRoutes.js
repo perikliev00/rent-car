@@ -19,6 +19,9 @@ const { body } = require('express-validator');
 // ─────────────────────────────────────────────────────────────────────────────
 router.get('/admin-dashboard', requireAuth, adminController.getAdminDashboard);
 router.get('/admin/orders', requireAuth, adminController.getAllOrders);
+router.get('/admin/orders/expired', requireAuth, adminController.getExpiredOrders);
+router.get('/admin/orders/deleted', requireAuth, adminController.getDeletedOrders);
+router.post('/admin/orders/deleted/empty', requireAuth, adminController.postEmptyDeletedOrders);
 // IMPORTANT: define '/new' BEFORE '/:id' to avoid route collision
 router.get('/admin/orders/new', requireAuth, adminController.getCreateOrder);
 router.post('/admin/orders/new', requireAuth, adminController.postCreateOrder);
@@ -28,6 +31,7 @@ router.get('/admin/orders/:id', requireAuth, adminController.getOrderDetails);
 router.get('/admin/orders/:id/edit', requireAuth, adminController.getEditOrder);
 router.post('/admin/orders/:id/edit', requireAuth, adminController.postEditOrder);
 router.post('/admin/orders/:id/delete', requireAuth, adminController.postDeleteOrder);
+router.post('/admin/orders/:id/restore', requireAuth, adminController.postRestoreOrder);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Admin contacts management (view/update/delete contact messages)

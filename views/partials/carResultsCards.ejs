@@ -10,14 +10,21 @@
     </ul>
 
     <div class="pricing">
-      <span class="daily">Price per day: $<%= car.price %></span>
+      <%
+        const displayRentalDays = Number(car.rentalDays || rentalDays || 0);
+        const unitPrice = Number((car.unitPrice ?? car.price) || 0);
+        const deliveryFee = Number(car.deliveryPrice ?? deliveryPrice ?? 0);
+        const returnFee = Number(car.returnPrice ?? returnPrice ?? 0);
+        const totalFee = Number(car.totalPrice || 0);
+      %>
+      <span class="daily">Price per day: $<%= unitPrice.toFixed(2) %></span>
       <% if (pickupLocation !== 'office' || returnLocation !== 'office') { %>
-        <span class="delivery">Delivery Price: $<%= deliveryPrice %></span>
-        <span class="return">Return Price: $<%= returnPrice %></span>
+        <span class="delivery">Delivery Price: $<%= deliveryFee.toFixed(2) %></span>
+        <span class="return">Return Price: $<%= returnFee.toFixed(2) %></span>
       <% } %>
       <span class="total">
-        Total for <%= rentalDays %> day<%= rentalDays > 1 ? 's' : '' %>:
-        $<%= car.totalPrice %>
+        Total for <%= displayRentalDays %> day<%= displayRentalDays > 1 ? 's' : '' %>:
+        $<%= totalFee.toFixed(2) %>
         <% if (pickupLocation !== 'office' || returnLocation !== 'office') { %>
           (including delivery and return)
         <% } %>
@@ -35,10 +42,10 @@
   <input type="hidden" name="carId"           value="<%= car._id %>">
   <input type="hidden" name="pickup-time"     value="<%= pickupTime %>">
   <input type="hidden" name="return-time"     value="<%= returnTime %>">
-  <input type="hidden" name="rental-days"     value="<%= rentalDays %>">
-  <input type="hidden" name="delivery-price"  value="<%= deliveryPrice %>">
-  <input type="hidden" name="return-price"    value="<%= returnPrice %>">
+  <input type="hidden" name="rental-days"     value="<%= car.rentalDays || rentalDays %>">
+  <input type="hidden" name="delivery-price"  value="<%= car.deliveryPrice %>">
+  <input type="hidden" name="return-price"    value="<%= car.returnPrice %>">
   <input type="hidden" name="total-price"     value="<%= car.totalPrice %>">
-  <input type="hidden" name="car-price"       value="<%= car.price %>">
+  <input type="hidden" name="car-price"       value="<%= car.unitPrice ?? car.price %>">
   <button class="order-btn">Book Now</button>
 </form>

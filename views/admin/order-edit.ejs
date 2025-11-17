@@ -232,6 +232,8 @@
       }
 
       function recompute(){
+        // Client-side recompute retained only for manual adjustments triggered by user,
+        // but initial value comes from the server (DB) and is not overridden on page load.
         const days = computeDays();
         const { d, r } = computeFees();
         const pd = perDay(days);
@@ -242,8 +244,7 @@
       function bind(el){ if (!el) return; el.addEventListener('change', recompute); el.addEventListener('input', recompute); el.addEventListener('blur', recompute); }
       [pickupDateEl, returnDateEl, pickupTimeEl, returnTimeEl, pickupLocEl, returnLocEl, rentalDaysEl, deliveryEl, returnEl, totalEl, carEl].forEach(bind);
 
-      // initial compute
-      recompute();
+      // NOTE: no automatic recompute() on initial load so the UI shows DB value exactly.
     })();
   </script>
   </body>

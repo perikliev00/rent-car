@@ -51,6 +51,13 @@
         .join(' ');
     }
     %>
+    <% const statusMap = {
+         'expired': { label: 'Expired', class: 'badge badge-expired' },
+         'cancelled': { label: 'Cancelled', class: 'badge badge-cancelled' },
+         'pending': { label: 'Pending', class: 'badge badge-pending' },
+         'active': { label: 'Active', class: 'badge badge-active' }
+       };
+    %>
     <% function normalizeImage(img){
          if(!img){ return '/images/luxury-showroom-orders.jpg'; }
          let u = String(img).trim();
@@ -199,20 +206,21 @@
             opacity: 0.7;
         }
         
-        .status-badge {
-            padding: 0.5rem 1rem;
-            border-radius: 6px;
-            font-size: 0.8rem;
-            font-weight: 600;
-            text-align: center;
-            display: inline-block;
-            min-width: 80px;
+        .badge {
+            padding: 0.35rem 0.8rem;
+            border-radius: 999px;
+            font-size: 0.75rem;
+            font-weight: 700;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
         }
-        
-        .status-confirmed { background: #10b981; color: #fff; }
-        .status-pending { background: #f59e0b; color: #fff; }
-        .status-completed { background: #3b82f6; color: #fff; }
-        .status-cancelled { background: #ef4444; color: #fff; }
+        .badge-active { background: rgba(16,185,129,.15); color:#10b981; border:1px solid rgba(16,185,129,.4); }
+        .badge-pending { background: rgba(245,158,11,.15); color:#f59e0b; border:1px solid rgba(245,158,11,.4); }
+        .badge-expired { background: rgba(239,68,68,.15); color:#ef4444; border:1px solid rgba(239,68,68,.4); }
+        .badge-cancelled { background: rgba(107,114,128,.2); color:#9ca3af; border:1px solid rgba(107,114,128,.4); }
         
         .admin-actions {
             display: flex;
@@ -319,31 +327,53 @@
             <h1 class="page-title"><%= title %> - LuxRide</h1>
             <div style="display:flex; gap:.5rem; align-items:center;">
               <a href="/admin/orders/new" class="btn-admin" style="border-color:#10b981;color:#10b981; text-decoration:none;">+ Add Order</a>
+              <a href="/admin/orders/expired" class="btn-admin" style="border-color:#ef4444;color:#ef4444; text-decoration:none;">Expired Orders</a>
+              <a href="/admin/orders/deleted" class="btn-admin" style="border-color:#9ca3af;color:#9ca3af; text-decoration:none;">Deleted Orders</a>
               <a href="/admin-dashboard" class="back-link">← Back to Dashboard</a>
             </div>
         </div>
         
         <!-- Filters -->
-        <div class="filters">
+        <form id="orders-filter-form" class="filters" method="GET" action="/admin/orders">
             <div class="filter-group">
                 <label for="status-filter">Status</label>
-                <select id="status-filter">
-                    <option value="">All Statuses</option>
-                    <option value="confirmed">Confirmed</option>
-                    <option value="pending">Pending</option>
-                    <option value="completed">Completed</option>
-                    <option value="cancelled">Cancelled</option>
+                <select id="status-filter" name="status">
+                    <option value="" <%= !filters || !filters.status ? 'selected' : '' %>>All Statuses</option>
+                    <option value="active" <%= filters && filters.status === 'active' ? 'selected' : '' %>>Active</option>
+                    <option value="pending" <%= filters && filters.status === 'pending' ? 'selected' : '' %>>Pending</option>
+                    <option value="expired" <%= filters && filters.status === 'expired' ? 'selected' : '' %>>Expired</option>
+                    <option value="cancelled" <%= filters && filters.status === 'cancelled' ? 'selected' : '' %>>Cancelled</option>
                 </select>
             </div>
             <div class="filter-group">
-                <label for="date-filter">Date Range</label>
-                <input type="date" id="date-filter">
+                <label for="start-date-filter">Start Date</label>
+                <input
+                  type="date"
+                  id="start-date-filter"
+                  name="startDate"
+                  value="<%= filters && filters.startDate ? filters.startDate : '' %>">
+            </div>
+            <div class="filter-group">
+                <label for="end-date-filter">End Date</label>
+                <input
+                  type="date"
+                  id="end-date-filter"
+                  name="endDate"
+                  value="<%= filters && filters.endDate ? filters.endDate : '' %>">
             </div>
             <div class="filter-group">
                 <label for="search-filter">Search Customer</label>
-                <input type="text" id="search-filter" placeholder="Name or email...">
+                <input
+                  type="text"
+                  id="search-filter"
+                  name="search"
+                  placeholder="Name, email or phone..."
+                  value="<%= filters && filters.search ? filters.search : '' %>">
             </div>
-        </div>
+            <div class="filter-group" style="align-self:flex-end;">
+                <button type="submit" class="btn-admin" style="border-color:#ffd23f;color:#ffd23f;">Apply Filters</button>
+            </div>
+        </form>
         
         <!-- Orders Table -->
         <div class="orders-container">
@@ -415,7 +445,8 @@
                                         </div>
                                     </td>
                                     <td>
-                                        <span class="status-badge status-confirmed">Confirmed</span>
+                                        <% const currentStatus = order.status || 'active'; const statusMeta = statusMap[currentStatus] || statusMap['active']; %>
+                                        <span class="<%= statusMeta.class %>"><%= statusMeta.label %></span>
                                     </td>
                                     <td>
                                         <div class="admin-actions">
