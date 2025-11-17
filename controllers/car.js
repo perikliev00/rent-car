@@ -3,6 +3,7 @@ const mongoose = require('mongoose');
 const { formatDateForDisplay } = require('../utils/dateFormatter');
 const { parseSofiaDate } = require('../utils/timeZone');
 const Reservation = require('../models/Reservation');
+const { ACTIVE_RESERVATION_STATUSES } = require('../utils/reservationHelpers');
 
 // ---------------------------------------------
 // Controller: GET /  (home page)
@@ -154,11 +155,13 @@ exports.postSearchCars = async (req, res) => {
       return res.status(400).send('Pick‑up must be before return.');
 
     const currentSid = req.session?._sid;
+    const now = new Date();
 
     // 🔥 Find all overlapping reservations (mode: "in process") with different sessionId
     const overlappingReservations = await Reservation.find({
-      mode: "in process",
+      status: { $in: ACTIVE_RESERVATION_STATUSES },
       sessionId: { $ne: currentSid },
+      holdExpiresAt: { $gt: now },
       // overlap condition: (pickupDate <= res.returnDate) && (returnDate >= res.pickupDate)
       $expr: {
         $and: [

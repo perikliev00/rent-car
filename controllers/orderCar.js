@@ -1,122 +1,225 @@
-const mongoose = require('mongoose');
 const Car = require('../models/Car');
-const { validationResult } = require('express-validator');
-const stripe = require('../config/stripe');
-const { formatDateForDisplay, formatLocationName } = require('../utils/dateFormatter');
 const Reservation = require('../models/Reservation');
+const { parseSofiaDate } = require('../utils/timeZone');
+const { computeBookingPrice } = require('../utils/pricing');
+const { formatDateForDisplay, formatLocationName } = require('../utils/dateFormatter');
+
+const HOLD_WINDOW_MS = 20 * 60 * 1000;
+const ACTIVE_RESERVATION_STATUSES = ['pending', 'processing'];
+
+function getSessionId(req) {
+  return (req.session && (req.session._sid || req.sessionID)) || req.sessionID;
+}
+
+function buildExistingReservationSummary(reservation) {
+  if (!reservation) return null;
+  const carName = reservation.carId && reservation.carId.name ? reservation.carId.name : 'Reserved car';
+  const totalPrice =
+    reservation.totalPrice != null && typeof reservation.totalPrice === 'number'
+      ? reservation.totalPrice.toFixed(2)
+      : null;
+
+  return {
+    carName,
+    pickupDate: formatDateForDisplay(reservation.pickupDate),
+    returnDate: formatDateForDisplay(reservation.returnDate),
+    totalPrice,
+  };
+}
+
+function buildBasePayload({
+  pickupDateISO,
+  returnDateISO,
+  pickupTime,
+  returnTime,
+  pickupLocation,
+  returnLocation,
+  pickupDateDisplay,
+  returnDateDisplay,
+  pickupLocationDisplay,
+  returnLocationDisplay,
+  pricing,
+  releaseRedirect,
+}) {
+  return {
+    pickupDateISO,
+    returnDateISO,
+    pickupTime,
+    returnTime,
+    pickupLocation,
+    returnLocation,
+    pickupDateDisplay,
+    returnDateDisplay,
+    pickupLocationDisplay,
+    returnLocationDisplay,
+    rentalDays: pricing.rentalDays,
+    deliveryPrice: pricing.deliveryPrice,
+    returnPrice: pricing.returnPrice,
+    totalPrice: pricing.totalPrice,
+    releaseRedirect,
+  };
+}
+
+function buildViewModel(car, basePayload, overrides = {}) {
+  return {
+    title: 'Order Car',
+    car,
+    pickupDate: basePayload.pickupDateDisplay,
+    pickupTime: basePayload.pickupTime || '',
+    returnDate: basePayload.returnDateDisplay,
+    returnTime: basePayload.returnTime || '',
+    pickupLocation: basePayload.pickupLocation,
+    returnLocation: basePayload.returnLocation,
+    pickupLocationDisplay: basePayload.pickupLocationDisplay,
+    returnLocationDisplay: basePayload.returnLocationDisplay,
+    pickupDateISO: basePayload.pickupDateISO,
+    returnDateISO: basePayload.returnDateISO,
+    rentalDays: basePayload.rentalDays,
+    deliveryPrice: basePayload.deliveryPrice,
+    returnPrice: basePayload.returnPrice,
+    totalPrice: basePayload.totalPrice,
+    fullName: '',
+    phoneNumber: '',
+    email: '',
+    address: '',
+    hotelName: '',
+    existingReservation: null,
+    releaseRedirect: basePayload.releaseRedirect,
+    message: null,
+    ...overrides,
+  };
+}
 
 module.exports.getOrderCar = async (req, res) => {
   try {
-    // 1. Pull & validate form data from hidden inputs
     const {
-      'pickup-date': pickupDate,
-      'return-date': returnDate,
+      'pickup-date': pickupDateISO,
+      'return-date': returnDateISO,
       'pickup-location': pickupLocation,
       'return-location': returnLocation,
       'pickup-time': pickupTime,
       'return-time': returnTime,
-      'rental-days': rentalDays,
-      'delivery-price': deliveryPrice,
-      'return-price': returnPrice,
-      'total-price': totalPrice,
+      'rental-days': rentalDaysFromForm, // ignored for pricing
+      'delivery-price': deliveryPriceFromForm, // ignored
+      'return-price': returnPriceFromForm, // ignored
+      'total-price': totalPriceFromForm, // ignored
       carId,
-    } = req.body;
+    } = req.body || {};
+
+    if (!carId) {
+      return res.status(400).send('Car not specified.');
+    }
 
     const car = await Car.findById(carId);
     if (!car) {
-      return res.status(404).send('Car not found');
+      return res.status(404).send('Car not found.');
     }
 
-    console.log(pickupDate);
-    console.log(pickupTime);
-    console.log(returnDate);
+    const start = parseSofiaDate(pickupDateISO, pickupTime || '00:00');
+    const end = parseSofiaDate(returnDateISO, returnTime || '23:59');
 
-    // Prepare display helpers
-    const pickupDateISO = pickupDate;
-    const returnDateISO = returnDate;
-    const pickupDateDisplay = formatDateForDisplay(pickupDate);
-    const returnDateDisplay = formatDateForDisplay(returnDate);
+    if (!start || !end || Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || start >= end) {
+      return res.status(400).send('Invalid booking dates.');
+    }
+
+    const pricing = computeBookingPrice(car, start, end, pickupLocation, returnLocation);
+    if (!pricing || !Number.isFinite(pricing.totalPrice) || pricing.totalPrice <= 0) {
+      return res.status(400).send('Unable to calculate price for this rental. Please try again.');
+    }
+
+    const pickupDateDisplay = formatDateForDisplay(pickupDateISO);
+    const returnDateDisplay = formatDateForDisplay(returnDateISO);
     const pickupLocationDisplay = formatLocationName(pickupLocation);
     const returnLocationDisplay = formatLocationName(returnLocation);
+    const sessionId = getSessionId(req);
+    const now = new Date();
 
-    // ⚙️ Upsert a single "in process" reservation per session (UPDATE carId too)
-    const currentSid = (req.session && (req.session._sid || req.sessionID)) || null;
-    console.log('🧩 currentSid:', currentSid);
-    console.log('🆕 requested carId (raw):', carId);
-
-    // validate + cast to ObjectId to ensure it really updates
-    if (!mongoose.Types.ObjectId.isValid(String(carId))) {
-      return res.status(400).send('Invalid car ID');
-    }
-    const carObjectId = new mongoose.Types.ObjectId(String(carId));
-
-    // For visibility, fetch any existing "in process" for this session
-    const existing = await Reservation.findOne({ sessionId: currentSid, mode: 'in process' }).select('carId').lean();
-    console.log('🔎 existing reservation for session:', existing ? { _id: String(existing._id), carId: String(existing.carId) } : null);
-
-    const updateDoc = {
-      carId: carObjectId,            // <-- ensure ObjectId is set
-      pickupDate,
-      pickupTime,
-      returnDate,
-      returnTime,
-      pickupLocation,
-      returnLocation,
-      mode: 'in process',
-      price: totalPrice,
-      sessionId: currentSid
-    };
-
-    const upserted = await Reservation.findOneAndUpdate(
-      { sessionId: currentSid, mode: 'in process' },          // find existing "in process" for this session
-      { $set: updateDoc, $currentDate: { updatedAt: true } }, // set fields + bump updatedAt
-      { new: true, upsert: true, setDefaultsOnInsert: true, runValidators: true }
-    );
-
-    console.log('✅ Reservation upserted (one per session):', {
-      _id: upserted._id.toString(),
-      carId_before: existing ? String(existing.carId) : null,
-      carId_after: String(upserted.carId),
-      mode: upserted.mode,
-      sessionId: upserted.sessionId
-    });
-
-    // Safety fallback: very rare—but if carId somehow didn't change, force it.
-    if (!upserted.carId || String(upserted.carId) !== String(carObjectId)) {
-      console.warn('⚠️ carId mismatch after upsert; forcing explicit update...');
-      await Reservation.updateOne(
-        { _id: upserted._id },
-        { $set: { carId: carObjectId }, $currentDate: { updatedAt: true } }
-      );
-      const check = await Reservation.findById(upserted._id).select('carId').lean();
-      console.log('🔁 carId after forced update:', check ? String(check.carId) : null);
-    }
-
-    res.render('orderMain', {
-      title: 'Order Car',
-      car,
-      pickupDate: pickupDateDisplay,
-      pickupTime,
-      returnDate: returnDateDisplay,
-      returnTime,
-      pickupLocation,
-      returnLocation,
-      pickupLocationDisplay,
-      returnLocationDisplay,
+    const basePayload = buildBasePayload({
       pickupDateISO,
       returnDateISO,
-      rentalDays,
-      deliveryPrice,
-      returnPrice,
-      totalPrice,
+      pickupTime,
+      returnTime,
+      pickupLocation,
+      returnLocation,
+      pickupDateDisplay,
+      returnDateDisplay,
+      pickupLocationDisplay,
+      returnLocationDisplay,
+      pricing,
+      releaseRedirect: req.originalUrl,
+    });
+
+    const renderOrderPage = (overrides = {}, status = 200) =>
+      res.status(status).render('orderMain', buildViewModel(car, basePayload, overrides));
+
+    const existingForSession = await Reservation.findOne({
+      sessionId,
+      status: { $in: ACTIVE_RESERVATION_STATUSES },
+      holdExpiresAt: { $gt: now },
+    }).populate('carId', 'name');
+
+    if (existingForSession) {
+      return renderOrderPage({
+        message: 'You already have an active reservation. Please complete or release it before starting another.',
+        existingReservation: buildExistingReservationSummary(existingForSession),
+      });
+    }
+
+    const overlappingReservation = await Reservation.findOne({
+      carId: car._id,
+      status: { $in: ACTIVE_RESERVATION_STATUSES },
+      holdExpiresAt: { $gt: now },
+      pickupDate: { $lt: end },
+      returnDate: { $gt: start },
+    }).lean();
+
+    if (overlappingReservation) {
+      return renderOrderPage({
+        message: 'Selected car is already reserved in this period. Please choose different dates or a different car.',
+      });
+    }
+
+    const bookedOverlap = await Car.findOne({
+      _id: car._id,
+      dates: {
+        $elemMatch: {
+          startDate: { $lt: end },
+          endDate: { $gt: start },
+        },
+      },
+    }).lean();
+
+    if (bookedOverlap) {
+      return renderOrderPage({
+        message: 'Selected car is already booked in this period. Please choose different dates or a different car.',
+      });
+    }
+
+    await Reservation.create({
+      carId: car._id,
+      sessionId,
+      pickupDate: start,
+      pickupTime,
+      returnDate: end,
+      returnTime,
+      pickupLocation,
+      returnLocation,
+      rentalDays: pricing.rentalDays,
+      deliveryPrice: pricing.deliveryPrice,
+      returnPrice: pricing.returnPrice,
+      totalPrice: pricing.totalPrice,
       fullName: '',
       phoneNumber: '',
       email: '',
       address: '',
       hotelName: '',
+      status: 'pending',
+      holdExpiresAt: new Date(Date.now() + HOLD_WINDOW_MS),
     });
+
+    return renderOrderPage({ message: null, existingReservation: null });
   } catch (err) {
-    console.error(err);
-    res.status(500).send('Error fetching car');
+    console.error('getOrderCar error:', err);
+    return res.status(500).send('Unable to prepare reservation.');
   }
 };
