@@ -3,29 +3,12 @@ const Reservation = require('../models/Reservation');
 const { parseSofiaDate } = require('../utils/timeZone');
 const { computeBookingPrice } = require('../utils/pricing');
 const { formatDateForDisplay, formatLocationName } = require('../utils/dateFormatter');
-
-const HOLD_WINDOW_MS = 20 * 60 * 1000;
-const ACTIVE_RESERVATION_STATUSES = ['pending', 'processing'];
-
-function getSessionId(req) {
-  return (req.session && (req.session._sid || req.sessionID)) || req.sessionID;
-}
-
-function buildExistingReservationSummary(reservation) {
-  if (!reservation) return null;
-  const carName = reservation.carId && reservation.carId.name ? reservation.carId.name : 'Reserved car';
-  const totalPrice =
-    reservation.totalPrice != null && typeof reservation.totalPrice === 'number'
-      ? reservation.totalPrice.toFixed(2)
-      : null;
-
-  return {
-    carName,
-    pickupDate: formatDateForDisplay(reservation.pickupDate),
-    returnDate: formatDateForDisplay(reservation.returnDate),
-    totalPrice,
-  };
-}
+const {
+  ACTIVE_RESERVATION_STATUSES,
+  HOLD_WINDOW_MS,
+  getSessionId,
+  buildExistingReservationSummary,
+} = require('../utils/reservationHelpers');
 
 function buildBasePayload({
   pickupDateISO,
