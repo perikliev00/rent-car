@@ -107,6 +107,43 @@ app.use(adminRoutes);
 app.use(supportRoutes);
 app.use(footerRoutes);
 
+
+
+// 404 handler
+app.use((req, res, next) => {
+  res.status(404).render('error/404', {
+    title: 'Page Not Found',
+    message: 'The page you are looking for does not exist.',
+  });
+});
+
+// Central error handler
+app.use((err, req, res, next) => {
+  console.error('❌ Unhandled error:', err);
+
+  if (res.headersSent) {
+    return next(err);
+  }
+
+  const status = err.status || 500;
+  const message =
+    err.publicMessage ||
+    err.message ||
+    'An unexpected error occurred. Please try again later.';
+
+  if (status === 404) {
+    return res.status(404).render('error/404', {
+      title: 'Page Not Found',
+      message,
+    });
+  }
+
+  return res.status(status).render('error/500', {
+    title: status === 500 ? 'Server Error' : 'Error',
+    message,
+  });
+});
+
 // ─────────────────────────────────────────────────────────────
 // Housekeeping helpers
 
