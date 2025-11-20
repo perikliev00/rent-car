@@ -73,7 +73,7 @@ function buildViewModel(car, basePayload, overrides = {}) {
   };
 }
 
-module.exports.getOrderCar = async (req, res) => {
+module.exports.getOrderCar = async (req, res, next) => {
   try {
     const {
       'pickup-date': pickupDateISO,
@@ -203,6 +203,7 @@ module.exports.getOrderCar = async (req, res) => {
     return renderOrderPage({ message: null, existingReservation: null });
   } catch (err) {
     console.error('getOrderCar error:', err);
-    return res.status(500).send('Unable to prepare reservation.');
+    err.publicMessage = 'Unable to prepare reservation.';
+    return next(err);
   }
 };

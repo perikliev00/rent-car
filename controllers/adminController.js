@@ -28,7 +28,7 @@ async function findActiveReservationHold(carId, start, end, session) {
   return search.lean();
 }
 
-exports.getAdminDashboard = async (req, res) => {
+exports.getAdminDashboard = async (req, res, next) => {
     try {
         console.log('Admin dashboard: Starting to fetch orders...');
         await expireFinishedOrders();
@@ -60,11 +60,12 @@ exports.getAdminDashboard = async (req, res) => {
         });
     } catch (err) {
         console.error('Admin dashboard error:', err);
-        res.status(500).send('Error loading admin dashboard');
+        err.publicMessage = 'Error loading admin dashboard.';
+        return next(err);
     }
 };
 
-exports.getAllOrders = async (req, res) => {
+exports.getAllOrders = async (req, res, next) => {
     try {
         await expireFinishedOrders();
         const { status, startDate, endDate, search } = req.query;
@@ -125,11 +126,12 @@ exports.getAllOrders = async (req, res) => {
         });
     } catch (err) {
         console.error('Get orders error:', err);
-        res.status(500).send('Error fetching orders');
+        err.publicMessage = 'Error fetching orders.';
+        return next(err);
     }
 };
 
-exports.getExpiredOrders = async (req, res) => {
+exports.getExpiredOrders = async (req, res, next) => {
     try {
         await expireFinishedOrders();
         const orders = await Order.find({ status: 'expired', isDeleted: { $ne: true } })
@@ -142,11 +144,12 @@ exports.getExpiredOrders = async (req, res) => {
         });
     } catch (err) {
         console.error('Get expired orders error:', err);
-        res.status(500).send('Error fetching expired orders');
+        err.publicMessage = 'Error fetching expired orders.';
+        return next(err);
     }
 };
 
-exports.getDeletedOrders = async (req, res) => {
+exports.getDeletedOrders = async (req, res, next) => {
     try {
         const orders = await Order.find({ isDeleted: true })
             .populate('carId', 'name image price transmission seats')
@@ -159,21 +162,23 @@ exports.getDeletedOrders = async (req, res) => {
         });
     } catch (err) {
         console.error('Get deleted orders error:', err);
-        res.status(500).send('Error fetching deleted orders');
+        err.publicMessage = 'Error fetching deleted orders.';
+        return next(err);
     }
 };
 
-exports.postEmptyDeletedOrders = async (_req, res) => {
+exports.postEmptyDeletedOrders = async (_req, res, next) => {
     try {
         await Order.deleteMany({ isDeleted: true });
         res.redirect('/admin/orders/deleted');
     } catch (err) {
         console.error('Empty deleted orders error:', err);
-        res.status(500).send('Error emptying deleted orders bin');
+        err.publicMessage = 'Error emptying deleted orders bin.';
+        return next(err);
     }
 };
 
-exports.getCreateOrder = async (req, res) => {
+exports.getCreateOrder = async (req, res, next) => {
     try {
         const now = new Date();
         const today = new Date(now).toISOString().slice(0,10);
@@ -201,7 +206,8 @@ exports.getCreateOrder = async (req, res) => {
         });
     } catch (err) {
         console.error('Get create order error:', err);
-        res.status(500).send('Error');
+        err.publicMessage = 'Error loading the order creation form.';
+        return next(err);
     }
 };
 
@@ -245,7 +251,7 @@ exports.getCarAvailability = async (req, res) => {
   }
 };
 
-exports.postCreateOrder = async (req, res) => {
+exports.postCreateOrder = async (req, res, next) => {
     let session;
     let responded = false;
     let success = false;
@@ -578,12 +584,13 @@ exports.postCreateOrder = async (req, res) => {
             return res.redirect('/admin/orders');
         } catch (fallbackErr) {
             console.error('Fallback create order error:', fallbackErr);
-            return res.status(500).send('Error creating order');
+            fallbackErr.publicMessage = 'Error creating order.';
+            return next(fallbackErr);
         }
     }
 };
 
-exports.getOrderDetails = async (req, res) => {
+exports.getOrderDetails = async (req, res, next) => {
     try {
         const order = await Order.findById(req.params.id)
             .populate('carId', 'name image price transmission seats');
@@ -594,11 +601,12 @@ exports.getOrderDetails = async (req, res) => {
         });
     } catch (err) {
         console.error('Get order details error:', err);
-        res.status(500).send('Error loading order details');
+        err.publicMessage = 'Error loading order details.';
+        return next(err);
     }
 };
 
-exports.getEditOrder = async (req, res) => {
+exports.getEditOrder = async (req, res, next) => {
     try {
         const order = await Order.findById(req.params.id).populate('carId', 'name image price priceTier_1_3 priceTier_7_31 priceTier_31_plus');
         if (!order) return res.status(404).send('Order not found');
@@ -633,11 +641,12 @@ exports.getEditOrder = async (req, res) => {
         });
     } catch (err) {
         console.error('Get edit order error:', err);
-        res.status(500).send('Error loading order');
+        err.publicMessage = 'Error loading order.';
+        return next(err);
     }
 };
 
-exports.postEditOrder = async (req, res) => {
+exports.postEditOrder = async (req, res, next) => {
     let session;
     try {
         const mongoose = require('mongoose');
@@ -881,11 +890,12 @@ exports.postEditOrder = async (req, res) => {
             returnTimeHHMM: toHHMM(order.returnTime)
           });
         }
-        res.status(500).send('Error saving order');
+        err.publicMessage = 'Error saving order.';
+        return next(err);
     }
 };
 
-exports.postDeleteOrder = async (req, res) => {
+exports.postDeleteOrder = async (req, res, next) => {
     let session;
     try {
         const mongoose = require('mongoose');
@@ -950,7 +960,8 @@ exports.postDeleteOrder = async (req, res) => {
             session.endSession();
           }
         } catch (e) {}
-        res.status(500).send('Error deleting order');
+        err.publicMessage = 'Error deleting order.';
+        return next(err);
     }
 };
 
@@ -1043,13 +1054,14 @@ exports.postRestoreOrder = async (req, res) => {
 };
 
 // -------- Cars CRUD (basic scaffolding, no complex logic) --------
-exports.listCars = async (req, res) => {
+exports.listCars = async (req, res, next) => {
     try {
         const cars = await Car.find().sort({ name: 1 });
         res.render('admin/cars', { title: 'Manage Cars', cars });
     } catch (err) {
         console.error('List cars error:', err);
-        res.status(500).send('Error loading cars');
+        err.publicMessage = 'Error loading cars.';
+        return next(err);
     }
 };
 
@@ -1057,7 +1069,7 @@ exports.getCreateCar = async (req, res) => {
     res.render('admin/car-form', { title: 'Add Car', car: null });
 };
 
-exports.postCreateCar = async (req, res) => {
+exports.postCreateCar = async (req, res, next) => {
     try {
         const { validationResult } = require('express-validator');
         const errors = validationResult(req);
@@ -1097,22 +1109,24 @@ exports.postCreateCar = async (req, res) => {
         res.redirect('/admin/cars');
     } catch (err) {
         console.error('Create car error:', err);
-        res.status(500).send('Error creating car');
+        err.publicMessage = 'Error creating car.';
+        return next(err);
     }
 };
 
-exports.getEditCar = async (req, res) => {
+exports.getEditCar = async (req, res, next) => {
     try {
         const car = await Car.findById(req.params.id);
         if (!car) return res.status(404).send('Car not found');
         res.render('admin/car-form', { title: 'Edit Car', car });
     } catch (err) {
         console.error('Get edit car error:', err);
-        res.status(500).send('Error');
+        err.publicMessage = 'Error loading car.';
+        return next(err);
     }
 };
 
-exports.postEditCar = async (req, res) => {
+exports.postEditCar = async (req, res, next) => {
     try {
         const { validationResult } = require('express-validator');
         const errors = validationResult(req);
@@ -1151,17 +1165,19 @@ exports.postEditCar = async (req, res) => {
         res.redirect('/admin/cars');
     } catch (err) {
         console.error('Edit car error:', err);
-        res.status(500).send('Error');
+        err.publicMessage = 'Error updating car.';
+        return next(err);
     }
 };
 
-exports.postDeleteCar = async (req, res) => {
+exports.postDeleteCar = async (req, res, next) => {
     try {
         await Car.findByIdAndDelete(req.params.id);
         res.redirect('/admin/cars');
     } catch (err) {
         console.error('Delete car error:', err);
-        res.status(500).send('Error');
+        err.publicMessage = 'Error deleting car.';
+        return next(err);
     }
 };
 

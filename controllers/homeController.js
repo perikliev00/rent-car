@@ -75,7 +75,8 @@ exports.getHome = async (req, res, next) => {
       category
     });
   } catch (err) {
-    console.error(err);
-    res.status(500).send('Error fetching cars');
+    console.error('getHome error:', err);
+    err.publicMessage = 'Error fetching cars.';
+    return next(err);
   }
 };

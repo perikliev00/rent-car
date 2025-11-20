@@ -27,7 +27,7 @@ function renderOrderPage(res, car, formData, message, options = {}) {
   return res.status(options.statusCode || 422).render('orderMain', viewModel);
 }
 
-exports.createCheckoutSession = async (req, res) => {
+exports.createCheckoutSession = async (req, res, next) => {
   const errors = validationResult(req);
   const formData = req.body;
   formData.releaseRedirect = req.originalUrl;
@@ -39,8 +39,9 @@ exports.createCheckoutSession = async (req, res) => {
       return res.status(404).send('Car not found');
     }
   } catch (err) {
-    console.error(err);
-    return res.status(500).send('Error loading car information.');
+    console.error('Error loading car information.', err);
+    err.publicMessage = 'Error loading car information.';
+    return next(err);
   }
 
   if (!errors.isEmpty()) {
@@ -244,12 +245,13 @@ exports.createCheckoutSession = async (req, res) => {
 
     res.redirect(303, stripeSession.url);
   } catch (err) {
-    console.error(err);
-    return res.status(500).send('Error processing checkout.');
+    console.error('Error processing checkout.', err);
+    err.publicMessage = 'Error processing checkout.';
+    return next(err);
   }
 };
 
-exports.handleCheckoutSuccess = async (req, res) => {
+exports.handleCheckoutSuccess = async (req, res, next) => {
   console.log('💥 /success HIT, query =', req.query);
 
   const stripeSessionId = req.query.session_id;
@@ -322,7 +324,8 @@ exports.handleCheckoutSuccess = async (req, res) => {
     return res.render('success', { title: 'Payment Success' });
   } catch (err) {
     console.error('Success handler error:', err);
-    res.status(500).send('Could not load booking status.');
+    err.publicMessage = 'Could not load booking status.';
+    return next(err);
   }
 };
 

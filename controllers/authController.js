@@ -52,7 +52,7 @@ exports.getSignup = (req, res) => {
 	res.render('signup', { title: 'Sign up' });
 };
 
-exports.postSignup = async (req, res) => {
+exports.postSignup = async (req, res, next) => {
 	try {
 		const errors = validationResult(req);
 		const { email, password } = req.body;
@@ -94,10 +94,8 @@ exports.postSignup = async (req, res) => {
 		return res.redirect('/');
 	} catch (err) {
 		console.error('Signup error:', err);
-		return res.status(500).render('signup', {
-			title: 'Sign up',
-			errors: [{ msg: 'Something went wrong. Please try again.' }]
-		});
+		err.publicMessage = 'Something went wrong while signing you up. Please try again.';
+		return next(err);
 	}
 };
 

@@ -1,55 +1,59 @@
 // Support pages controller
 
 // Get phone support page
-exports.getPhoneSupport = async (req, res) => {
+exports.getPhoneSupport = async (req, res, next) => {
   try {
     res.render('phone-support', {
       title: 'Phone Support - Rent A Car'
     });
   } catch (err) {
-    console.error(err);
-    res.status(500).send('Error loading phone support page');
+    console.error('getPhoneSupport error:', err);
+    err.publicMessage = 'Error loading phone support page.';
+    return next(err);
   }
 };
 
 // Get email support page
-exports.getEmailSupport = async (req, res) => {
+exports.getEmailSupport = async (req, res, next) => {
   try {
     res.render('email-support', {
       title: 'Email Support - Rent A Car'
     });
   } catch (err) {
-    console.error(err);
-    res.status(500).send('Error loading email support page');
+    console.error('getEmailSupport error:', err);
+    err.publicMessage = 'Error loading email support page.';
+    return next(err);
   }
 };
 
 // Get visit location page
-exports.getVisitLocation = async (req, res) => {
+exports.getVisitLocation = async (req, res, next) => {
   try {
     res.render('visit-location', {
       title: 'Visit Our Location - Rent A Car'
     });
   } catch (err) {
-    console.error(err);
-    res.status(500).send('Error loading visit location page');
+    console.error('getVisitLocation error:', err);
+    err.publicMessage = 'Error loading visit location page.';
+    return next(err);
   }
 };
 
 // Get live chat page
-exports.getLiveChat = async (req, res) => {
+exports.getLiveChat = async (req, res, next) => {
   try {
     res.render('live-chat', {
       title: 'Live Chat Support - Rent A Car'
     });
   } catch (err) {
-    console.error(err);
-    res.status(500).send('Error loading live chat page');
+    console.error('getLiveChat error:', err);
+    err.publicMessage = 'Error loading live chat page.';
+    return next(err);
   }
 };
 
 // Handle email support form submission
-exports.postEmailSupport = async (req, res) => {
+exports.postEmailSupport = async (req, res, next) => {
   try {
     const { name, email, subject, priority, message } = req.body;
     
@@ -69,10 +73,8 @@ exports.postEmailSupport = async (req, res) => {
     });
     
   } catch (err) {
-    console.error(err);
-    res.render('email-support', {
-      title: 'Email Support - Rent A Car',
-      errorMessage: 'There was an error sending your message. Please try again.'
-    });
+    console.error('postEmailSupport error:', err);
+    err.publicMessage = 'There was an error sending your message. Please try again later.';
+    return next(err);
   }
 };

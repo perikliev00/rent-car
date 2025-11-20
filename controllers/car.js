@@ -43,15 +43,16 @@ exports.getHome = async (req, res, next) => {
       rentalDays
     });
   } catch (err) {
-    console.error(err);
-    res.status(500).send('Error fetching cars');
+    console.error('getHome error:', err);
+    err.publicMessage = 'Error fetching cars.';
+    return next(err);
   }
 };
 
 // ---------------------------------------------
 // Controller: POST /search  (search results)
 // ---------------------------------------------
-exports.postSearchCars = async (req, res) => {
+exports.postSearchCars = async (req, res, next) => {
   try {
     /* 1. Pull & validate form data */
     const {
@@ -254,7 +255,8 @@ exports.postSearchCars = async (req, res) => {
       cars
     });
   } catch (err) {
-    console.error(err);
-    res.status(500).send('Error searching for cars');
+    console.error('postSearchCars error:', err);
+    err.publicMessage = 'Error searching for cars.';
+    return next(err);
   }
 };

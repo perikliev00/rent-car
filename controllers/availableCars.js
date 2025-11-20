@@ -7,7 +7,7 @@ const { ACTIVE_RESERVATION_STATUSES, getSessionId } = require('../utils/reservat
 // ---------------------------------------------
 // Controller: POST /search  (search results)
 // ---------------------------------------------
-exports.postSearchCars = async (req, res) => {
+exports.postSearchCars = async (req, res, next) => {
   let errors = validationResult(req);
   // Check if pick-up or return date is in the past – allow today
   const now = new Date();
@@ -180,6 +180,7 @@ exports.postSearchCars = async (req, res) => {
     });
   } catch (err) {
     console.error(err);
-    res.status(500).send('Error searching for cars');
+    err.publicMessage = 'Error searching for cars.';
+    return next(err);
   }
 }
