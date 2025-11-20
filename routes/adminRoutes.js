@@ -7,7 +7,7 @@ const adminController = require('../controllers/adminController');
 // Contact messages controller (admin side)
 const contactAdminController = require('../controllers/contactController');
 // Middleware: ensures user is logged in for protected routes
-const { requireAuth } = require('../middleware/auth');
+const { requireAdmin } = require('../middleware/auth');
 // Multer upload helper for car images
 const { upload } = require('../middleware/upload');
 // express-validator: validate/normalize incoming form data
@@ -17,37 +17,37 @@ const { body } = require('express-validator');
 // ─────────────────────────────────────────────────────────────────────────────
 // Admin dashboard and Orders
 // ─────────────────────────────────────────────────────────────────────────────
-router.get('/admin-dashboard', requireAuth, adminController.getAdminDashboard);
-router.get('/admin/orders', requireAuth, adminController.getAllOrders);
-router.get('/admin/orders/expired', requireAuth, adminController.getExpiredOrders);
-router.get('/admin/orders/deleted', requireAuth, adminController.getDeletedOrders);
-router.post('/admin/orders/deleted/empty', requireAuth, adminController.postEmptyDeletedOrders);
+router.get('/admin-dashboard', requireAdmin, adminController.getAdminDashboard);
+router.get('/admin/orders', requireAdmin, adminController.getAllOrders);
+router.get('/admin/orders/expired', requireAdmin, adminController.getExpiredOrders);
+router.get('/admin/orders/deleted', requireAdmin, adminController.getDeletedOrders);
+router.post('/admin/orders/deleted/empty', requireAdmin, adminController.postEmptyDeletedOrders);
 // IMPORTANT: define '/new' BEFORE '/:id' to avoid route collision
-router.get('/admin/orders/new', requireAuth, adminController.getCreateOrder);
-router.post('/admin/orders/new', requireAuth, adminController.postCreateOrder);
+router.get('/admin/orders/new', requireAdmin, adminController.getCreateOrder);
+router.post('/admin/orders/new', requireAdmin, adminController.postCreateOrder);
 // Availability check endpoint
-router.get('/admin/cars/:id/availability', requireAuth, adminController.getCarAvailability);
-router.get('/admin/orders/:id', requireAuth, adminController.getOrderDetails);
-router.get('/admin/orders/:id/edit', requireAuth, adminController.getEditOrder);
-router.post('/admin/orders/:id/edit', requireAuth, adminController.postEditOrder);
-router.post('/admin/orders/:id/delete', requireAuth, adminController.postDeleteOrder);
-router.post('/admin/orders/:id/restore', requireAuth, adminController.postRestoreOrder);
+router.get('/admin/cars/:id/availability', requireAdmin, adminController.getCarAvailability);
+router.get('/admin/orders/:id', requireAdmin, adminController.getOrderDetails);
+router.get('/admin/orders/:id/edit', requireAdmin, adminController.getEditOrder);
+router.post('/admin/orders/:id/edit', requireAdmin, adminController.postEditOrder);
+router.post('/admin/orders/:id/delete', requireAdmin, adminController.postDeleteOrder);
+router.post('/admin/orders/:id/restore', requireAdmin, adminController.postRestoreOrder);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Admin contacts management (view/update/delete contact messages)
 // ─────────────────────────────────────────────────────────────────────────────
-router.get('/admin/contacts', requireAuth, contactAdminController.getAdminContacts);
-router.post('/admin/contacts/:id/status', requireAuth, contactAdminController.postUpdateContactStatus);
-router.post('/admin/contacts/:id/delete', requireAuth, contactAdminController.postDeleteContact);
+router.get('/admin/contacts', requireAdmin, contactAdminController.getAdminContacts);
+router.post('/admin/contacts/:id/status', requireAdmin, contactAdminController.postUpdateContactStatus);
+router.post('/admin/contacts/:id/delete', requireAdmin, contactAdminController.postDeleteContact);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Cars CRUD (create/edit/delete car inventory)
 // ─────────────────────────────────────────────────────────────────────────────
-router.get('/admin/cars', requireAuth, adminController.listCars);
-router.get('/admin/cars/new', requireAuth, adminController.getCreateCar);
+router.get('/admin/cars', requireAdmin, adminController.listCars);
+router.get('/admin/cars/new', requireAdmin, adminController.getCreateCar);
 router.post(
   '/admin/cars/new',
-  requireAuth,
+  requireAdmin,
   upload.single('image'),
   [
     body('name').trim().isLength({ min: 2 }).withMessage('Name is required'),
@@ -60,10 +60,10 @@ router.post(
   ],
   adminController.postCreateCar
 );
-router.get('/admin/cars/:id/edit', requireAuth, adminController.getEditCar);
+router.get('/admin/cars/:id/edit', requireAdmin, adminController.getEditCar);
 router.post(
   '/admin/cars/:id/edit',
-  requireAuth,
+  requireAdmin,
   upload.single('image'),
   [
     body('name').trim().isLength({ min: 2 }).withMessage('Name is required'),
@@ -76,7 +76,7 @@ router.post(
   ],
   adminController.postEditCar
 );
-router.post('/admin/cars/:id/delete', requireAuth, adminController.postDeleteCar);
+router.post('/admin/cars/:id/delete', requireAdmin, adminController.postDeleteCar);
 
 // categories routes removed
 

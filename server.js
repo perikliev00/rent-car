@@ -9,6 +9,7 @@ const bodyParser = require('body-parser');
 const path = require('path');
 const session = require('express-session');
 const MongoDBStore = require('connect-mongodb-session')(session);
+const helmet = require('helmet');
 
 // Routes
 const paymentRoutes = require('./routes/paymentRoutes');
@@ -42,6 +43,7 @@ app.set('view engine', 'ejs');
 // Body Parsers
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(bodyParser.json());
+app.use(helmet({ contentSecurityPolicy: false }));
 
 // ─────────────────────────────────────────────────────────────
 // Session store
@@ -107,8 +109,6 @@ app.use(footerRoutes);
 
 // ─────────────────────────────────────────────────────────────
 // Housekeeping helpers
-
-// Helper: "now" in Europe/Sofia as a Date object (wall-clock aligned)
 
 async function cleanUpOutdatedDates() {
   try {
@@ -179,9 +179,6 @@ async function cleanUpOutdatedDates() {
     console.error('Cleanup error (Car.dates Sofia):', err);
   }
 }
-
-
-
 
 // Housekeep reservations whose holds expired or sessions vanished
 async function cleanUpAbandonedReservations() {
