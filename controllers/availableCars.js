@@ -3,7 +3,7 @@ const { validationResult } = require('express-validator');
 const Reservation = require('../models/Reservation');
 const { parseSofiaDate } = require('../utils/timeZone');
 const { computeBookingPrice } = require('../utils/pricing');
-const { ACTIVE_RESERVATION_STATUSES } = require('../utils/reservationHelpers');
+const { ACTIVE_RESERVATION_STATUSES, getSessionId } = require('../utils/reservationHelpers');
 // ---------------------------------------------
 // Controller: POST /search  (search results)
 // ---------------------------------------------
@@ -12,7 +12,7 @@ exports.postSearchCars = async (req, res) => {
   // Check if pick-up or return date is in the past – allow today
   const now = new Date();
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()); // 00:00 today
-
+11
   const pickupDateInput = new Date(req.body['pickup-date']);
   const returnDateInput = new Date(req.body['return-date']);
   const pickupTimeInput = req.body['pickup-time'];
@@ -86,12 +86,20 @@ exports.postSearchCars = async (req, res) => {
     if (!pickupDate || !returnDate || Number.isNaN(pickupDate.getTime()) || Number.isNaN(returnDate.getTime()))
       return res.status(400).send('Invalid pick-up or return date / time.');
 
-    const activeReservations = await Reservation.find({
+    const sessionId = getSessionId(req);
+
+    const reservationQuery = {
       status: { $in: ACTIVE_RESERVATION_STATUSES },
       holdExpiresAt: { $gt: new Date() },
       pickupDate: { $lt: returnDate },
-      returnDate: { $gt: pickupDate }
-    }).select('carId');
+      returnDate: { $gt: pickupDate },
+    };
+
+    if (sessionId) {
+      reservationQuery.sessionId = { $ne: sessionId };
+    }
+
+    const activeReservations = await Reservation.find(reservationQuery).select('carId');
 
     console.log(
       "--------------------------------"

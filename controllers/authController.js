@@ -29,7 +29,11 @@ exports.postLogin = (req, res) => {
 		.then(result => {
 			if (result) {
 				req.session.isLoggedIn = true;
-				req.session.user = user;
+				req.session.user = {
+					_id: user._id,
+					email: user.email,
+					role: user.role
+				};
 				console.log(req.session.user);
 				return res.redirect('/');
 			} else {
@@ -82,7 +86,11 @@ exports.postSignup = async (req, res) => {
 		await user.save();
 
 		req.session.isLoggedIn = true;
-		req.session.user = user;
+		req.session.user = {
+			_id: user._id,
+			email: user.email,
+			role: user.role
+		};
 		return res.redirect('/');
 	} catch (err) {
 		console.error('Signup error:', err);
