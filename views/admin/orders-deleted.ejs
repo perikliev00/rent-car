@@ -51,6 +51,7 @@
       <div style="display:flex; gap:.5rem; flex-wrap:wrap;">
         <a href="/admin/orders" class="btn-admin" style="border-color:#ffd23f;color:#ffd23f;">← All Orders</a>
         <form action="/admin/orders/deleted/empty" method="POST" onsubmit="return confirm('Permanently remove all deleted orders?');">
+          <input type="hidden" name="_csrf" value="<%= csrfToken || '' %>">
           <button type="submit" class="btn-admin" style="border-color:#ef4444;color:#ef4444;">Empty Bin</button>
         </form>
       </div>
@@ -108,6 +109,7 @@
                   <td>
                     <form action="/admin/orders/<%= order._id %>/restore" method="POST"
                       onsubmit="return confirm('Restore this order and re-block the car dates for its period?');">
+                      <input type="hidden" name="_csrf" value="<%= csrfToken || '' %>">
                       <button type="submit" class="btn-admin" style="border-color:#10b981;color:#10b981;">Restore</button>
                     </form>
                   </td>

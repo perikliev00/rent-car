@@ -10,6 +10,7 @@ const path = require('path');
 const session = require('express-session');
 const MongoDBStore = require('connect-mongodb-session')(session);
 const helmet = require('helmet');
+const { adminLimiter } = require('./middleware/rateLimit');
 
 // Routes
 const paymentRoutes = require('./routes/paymentRoutes');
@@ -98,12 +99,19 @@ app.use((req, res, next) => {
   next();
 });
 
+app.use((req, res, next) => {
+  if (typeof res.locals.csrfToken === 'undefined') {
+    res.locals.csrfToken = null;
+  }
+  next();
+});
+
 // ─────────────────────────────────────────────────────────────
 // Routes
 app.use(carRoutes);
 app.use(paymentRoutes);
 app.use(authRoutes);
-app.use(adminRoutes);
+app.use(adminLimiter, adminRoutes);
 app.use(supportRoutes);
 app.use(footerRoutes);
 
@@ -115,6 +123,20 @@ app.use((req, res, next) => {
     title: 'Page Not Found',
     message: 'The page you are looking for does not exist.',
   });
+});
+
+app.use((err, req, res, next) => {
+  if (err && err.code === 'EBADCSRFTOKEN') {
+    const message = 'Invalid or missing CSRF token.';
+    if (req.accepts('html')) {
+      return res.status(403).render('error/500', {
+        title: 'Security Error',
+        message,
+      });
+    }
+    return res.status(403).json({ error: message });
+  }
+  return next(err);
 });
 
 // Central error handler

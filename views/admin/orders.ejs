@@ -453,6 +453,7 @@
                                             <a class="btn-admin btn-view" href="/admin/orders/<%= order._id %>">View</a>
                                             <a class="btn-admin btn-edit" href="/admin/orders/<%= order._id %>/edit">Edit</a>
                                             <form action="/admin/orders/<%= order._id %>/delete" method="POST" style="display:inline;" onsubmit="return confirm('Delete this order? This will also free the car dates.');">
+                                                <input type="hidden" name="_csrf" value="<%= csrfToken || '' %>">
                                                 <button type="submit" class="btn-admin btn-delete">Delete</button>
                                             </form>
                                         </div>

@@ -2,9 +2,13 @@ const express = require('express');
 const router = express.Router();
 const paymentController = require('../controllers/payment');
 const { body } = require('express-validator');
+const csrf = require('csurf');
+
+const csrfProtection = csrf();
 
 router.post(
   '/create-checkout-session',
+  csrfProtection,
   [
     body('fullName').notEmpty().withMessage('Please enter your full name'),
     body('phoneNumber')
@@ -23,7 +27,7 @@ router.post(
   paymentController.createCheckoutSession
 );
 
-router.post('/reservations/release', paymentController.releaseActiveReservation);
+router.post('/reservations/release', csrfProtection, paymentController.releaseActiveReservation);
 router.get('/success', paymentController.handleCheckoutSuccess);
 router.get('/cancel', paymentController.handleCheckoutCancel);
 

@@ -49,6 +49,7 @@
               Please finish or release it before starting another booking.
             </p>
             <form action="/reservations/release" method="POST" style="margin-top:0.5rem;">
+              <input type="hidden" name="_csrf" value="<%= csrfToken || '' %>">
               <% if (typeof releaseRedirect !== 'undefined' && releaseRedirect) { %>
                 <input type="hidden" name="redirect" value="<%= releaseRedirect %>">
               <% } %>

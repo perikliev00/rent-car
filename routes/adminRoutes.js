@@ -2,6 +2,7 @@
 const express = require('express');
 // Create a new router instance
 const router = express.Router();
+const csrf = require('csurf');
 // Admin controller: dashboard, orders, and cars logic
 const adminController = require('../controllers/adminController');
 // Contact messages controller (admin side)
@@ -14,41 +15,53 @@ const { upload } = require('../middleware/upload');
 const { body } = require('express-validator');
 // Categories feature removed
 
+const csrfProtection = csrf();
+const setCsrfToken = (req, res, next) => {
+  try {
+    res.locals.csrfToken = req.csrfToken();
+    next();
+  } catch (err) {
+    next(err);
+  }
+};
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Admin dashboard and Orders
 // ─────────────────────────────────────────────────────────────────────────────
-router.get('/admin-dashboard', requireAdmin, adminController.getAdminDashboard);
-router.get('/admin/orders', requireAdmin, adminController.getAllOrders);
-router.get('/admin/orders/expired', requireAdmin, adminController.getExpiredOrders);
-router.get('/admin/orders/deleted', requireAdmin, adminController.getDeletedOrders);
-router.post('/admin/orders/deleted/empty', requireAdmin, adminController.postEmptyDeletedOrders);
+router.get('/admin-dashboard', requireAdmin, csrfProtection, setCsrfToken, adminController.getAdminDashboard);
+router.get('/admin/orders', requireAdmin, csrfProtection, setCsrfToken, adminController.getAllOrders);
+router.get('/admin/orders/expired', requireAdmin, csrfProtection, setCsrfToken, adminController.getExpiredOrders);
+router.get('/admin/orders/deleted', requireAdmin, csrfProtection, setCsrfToken, adminController.getDeletedOrders);
+router.post('/admin/orders/deleted/empty', requireAdmin, csrfProtection, adminController.postEmptyDeletedOrders);
 // IMPORTANT: define '/new' BEFORE '/:id' to avoid route collision
-router.get('/admin/orders/new', requireAdmin, adminController.getCreateOrder);
-router.post('/admin/orders/new', requireAdmin, adminController.postCreateOrder);
+router.get('/admin/orders/new', requireAdmin, csrfProtection, setCsrfToken, adminController.getCreateOrder);
+router.post('/admin/orders/new', requireAdmin, csrfProtection, setCsrfToken, adminController.postCreateOrder);
 // Availability check endpoint
 router.get('/admin/cars/:id/availability', requireAdmin, adminController.getCarAvailability);
-router.get('/admin/orders/:id', requireAdmin, adminController.getOrderDetails);
-router.get('/admin/orders/:id/edit', requireAdmin, adminController.getEditOrder);
-router.post('/admin/orders/:id/edit', requireAdmin, adminController.postEditOrder);
-router.post('/admin/orders/:id/delete', requireAdmin, adminController.postDeleteOrder);
-router.post('/admin/orders/:id/restore', requireAdmin, adminController.postRestoreOrder);
+router.get('/admin/orders/:id', requireAdmin, csrfProtection, setCsrfToken, adminController.getOrderDetails);
+router.get('/admin/orders/:id/edit', requireAdmin, csrfProtection, setCsrfToken, adminController.getEditOrder);
+router.post('/admin/orders/:id/edit', requireAdmin, csrfProtection, setCsrfToken, adminController.postEditOrder);
+router.post('/admin/orders/:id/delete', requireAdmin, csrfProtection, adminController.postDeleteOrder);
+router.post('/admin/orders/:id/restore', requireAdmin, csrfProtection, adminController.postRestoreOrder);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Admin contacts management (view/update/delete contact messages)
 // ─────────────────────────────────────────────────────────────────────────────
-router.get('/admin/contacts', requireAdmin, contactAdminController.getAdminContacts);
-router.post('/admin/contacts/:id/status', requireAdmin, contactAdminController.postUpdateContactStatus);
-router.post('/admin/contacts/:id/delete', requireAdmin, contactAdminController.postDeleteContact);
+router.get('/admin/contacts', requireAdmin, csrfProtection, setCsrfToken, contactAdminController.getAdminContacts);
+router.post('/admin/contacts/:id/status', requireAdmin, csrfProtection, contactAdminController.postUpdateContactStatus);
+router.post('/admin/contacts/:id/delete', requireAdmin, csrfProtection, contactAdminController.postDeleteContact);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Cars CRUD (create/edit/delete car inventory)
 // ─────────────────────────────────────────────────────────────────────────────
-router.get('/admin/cars', requireAdmin, adminController.listCars);
-router.get('/admin/cars/new', requireAdmin, adminController.getCreateCar);
+router.get('/admin/cars', requireAdmin, csrfProtection, setCsrfToken, adminController.listCars);
+router.get('/admin/cars/new', requireAdmin, csrfProtection, setCsrfToken, adminController.getCreateCar);
 router.post(
   '/admin/cars/new',
   requireAdmin,
   upload.single('image'),
+  csrfProtection,
+  setCsrfToken,
   [
     body('name').trim().isLength({ min: 2 }).withMessage('Name is required'),
     body('transmission').trim().isIn(['Automatic','Manual']).withMessage('Transmission must be Automatic or Manual'),
@@ -60,11 +73,13 @@ router.post(
   ],
   adminController.postCreateCar
 );
-router.get('/admin/cars/:id/edit', requireAdmin, adminController.getEditCar);
+router.get('/admin/cars/:id/edit', requireAdmin, csrfProtection, setCsrfToken, adminController.getEditCar);
 router.post(
   '/admin/cars/:id/edit',
   requireAdmin,
   upload.single('image'),
+  csrfProtection,
+  setCsrfToken,
   [
     body('name').trim().isLength({ min: 2 }).withMessage('Name is required'),
     body('transmission').trim().isIn(['Automatic','Manual']).withMessage('Transmission must be Automatic or Manual'),
@@ -76,7 +91,7 @@ router.post(
   ],
   adminController.postEditCar
 );
-router.post('/admin/cars/:id/delete', requireAdmin, adminController.postDeleteCar);
+router.post('/admin/cars/:id/delete', requireAdmin, csrfProtection, adminController.postDeleteCar);
 
 // categories routes removed
 

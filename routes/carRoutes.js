@@ -8,10 +8,24 @@ const availableCarsController = require('../controllers/availableCars'); // Ensu
 const orderCarController = require('../controllers/orderCar'); // Ensure you have a controller for handling requests
 const aboutController = require('../controllers/aboutController'); // About controller
 const contactController = require('../controllers/contactController'); // Contact controller
+const csrf = require('csurf');
+const { contactLimiter } = require('../middleware/rateLimit');
 // Categories feature removed
+const csrfProtection = csrf();
+const setCsrfToken = (req, res, next) => {
+  if (typeof req.csrfToken === 'function') {
+    try {
+      res.locals.csrfToken = req.csrfToken();
+    } catch (err) {
+      return next(err);
+    }
+  }
+  return next();
+};
+
 // Get all cars or filter cars based on query parameters
-router.get('/', homeController.getHome);
-router.post('/postSearchCars',[
+router.get('/', csrfProtection, setCsrfToken, homeController.getHome);
+router.post('/postSearchCars', csrfProtection, setCsrfToken,[
     body('pickup-time')
       .notEmpty()
       .withMessage('Please choose a pick-up time'),
@@ -21,10 +35,10 @@ router.post('/postSearchCars',[
 ], availableCarsController.postSearchCars);
 // Pagination-friendly GET for search results (links use query params)
 // removed GET pagination route per user request
-router.post('/orders',orderCarController.getOrderCar);
+router.post('/orders', csrfProtection, setCsrfToken, orderCarController.getOrderCar);
 router.get('/about', aboutController.getAbout);
-router.get('/contacts', contactController.getContacts);
-router.post('/contact', contactController.postContact);
+router.get('/contacts', csrfProtection, setCsrfToken, contactController.getContacts);
+router.post('/contact', contactLimiter, csrfProtection, setCsrfToken, contactController.postContact);
 
 // Category page
 // category routes removed

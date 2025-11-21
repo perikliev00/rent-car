@@ -1,24 +1,30 @@
 const express = require('express');
-const expressValidator = require('express-validator');
-const rateLimit = require('express-rate-limit');
 const router = express.Router();
-const { body, validationResult } = require('express-validator');
+const { body } = require('express-validator');
 const authController = require('../controllers/authController');
 const { requireGuest, requireAuth } = require('../middleware/auth');
+const csrf = require('csurf');
+const { authLimiter } = require('../middleware/rateLimit');
 
-const loginLimiter = rateLimit({
-	windowMs: 3 * 60 * 1000,
-	max: 10,
-	message: 'Too many login attempts from this IP, please try again later.',
-	standardHeaders: true,
-	legacyHeaders: false
-});
+const csrfProtection = csrf();
+const setCsrfToken = (req, res, next) => {
+	if (typeof req.csrfToken === 'function') {
+		try {
+			res.locals.csrfToken = req.csrfToken();
+		} catch (err) {
+			return next(err);
+		}
+	}
+	return next();
+};
 
-router.get('/login', requireGuest, authController.getLogin);
+router.get('/login', requireGuest, csrfProtection, setCsrfToken, authController.getLogin);
 router.post(
 	'/login',
 	requireGuest,
-	loginLimiter,
+	authLimiter,
+	csrfProtection,
+	setCsrfToken,
 	[
 		body('email')
 			.trim()
@@ -33,11 +39,13 @@ router.post(
 );
 
 // Signup routes
-router.get('/signup', requireGuest, authController.getSignup);
+router.get('/signup', requireGuest, csrfProtection, setCsrfToken, authController.getSignup);
 router.post(
 	'/signup',
 	requireGuest,
-	loginLimiter,
+	authLimiter,
+	csrfProtection,
+	setCsrfToken,
 	[
 		body('email')
 			.trim()

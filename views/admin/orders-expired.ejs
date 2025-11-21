@@ -132,6 +132,7 @@
                     <div class="admin-actions">
                       <a class="btn-admin btn-edit" href="/admin/orders/<%= order._id %>/edit">Edit</a>
                       <form action="/admin/orders/<%= order._id %>/delete" method="POST" onsubmit="return confirm('Delete this expired order? This also removes its car dates.');">
+                        <input type="hidden" name="_csrf" value="<%= csrfToken || '' %>">
                         <button type="submit" class="btn-admin btn-delete">Delete</button>
                       </form>
                     </div>

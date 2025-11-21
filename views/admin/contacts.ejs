@@ -59,14 +59,17 @@
               <td>
                 <div class="actions">
                   <form action="/admin/contacts/<%= c._id %>/status" method="POST">
+                    <input type="hidden" name="_csrf" value="<%= csrfToken || '' %>">
                     <input type="hidden" name="status" value="ready" />
                     <button class="btn" type="submit">Mark Ready</button>
                   </form>
                   <form action="/admin/contacts/<%= c._id %>/status" method="POST">
+                    <input type="hidden" name="_csrf" value="<%= csrfToken || '' %>">
                     <input type="hidden" name="status" value="done" />
                     <button class="btn" type="submit">Mark Done</button>
                   </form>
                   <form action="/admin/contacts/<%= c._id %>/delete" method="POST" onsubmit="return confirm('Delete this message?');">
+                    <input type="hidden" name="_csrf" value="<%= csrfToken || '' %>">
                     <button class="btn btn-del" type="submit">Delete</button>
                   </form>
                 </div>

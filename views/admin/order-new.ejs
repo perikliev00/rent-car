@@ -33,6 +33,7 @@
       <div class="banner error" style="border:2px solid #ef4444;color:#ef4444;font-weight:800;padding:.6rem .8rem;border-radius:8px;margin:.5rem 0 1rem 0;background:rgba(239,68,68,.1)"><%= error %></div>
     <% } %>
     <form action="/admin/orders/new" method="POST" class="card" style="padding:1rem;border:2px solid #ffd23f;border-radius:10px;background:rgba(24,24,24,.6);">
+      <input type="hidden" name="_csrf" value="<%= csrfToken || '' %>">
       <div class="form-grid">
         <div class="row">
           <label>Pickup Date</label>
