@@ -1,77 +1,20 @@
 const Car = require('../models/Car');
-const Reservation = require('../models/Reservation');
-const { parseSofiaDate } = require('../utils/timeZone');
 const { computeBookingPrice } = require('../utils/pricing');
 const { formatDateForDisplay, formatLocationName } = require('../utils/dateFormatter');
 const {
-  ACTIVE_RESERVATION_STATUSES,
-  HOLD_WINDOW_MS,
   getSessionId,
   buildExistingReservationSummary,
 } = require('../utils/reservationHelpers');
-
-function buildBasePayload({
-  pickupDateISO,
-  returnDateISO,
-  pickupTime,
-  returnTime,
-  pickupLocation,
-  returnLocation,
-  pickupDateDisplay,
-  returnDateDisplay,
-  pickupLocationDisplay,
-  returnLocationDisplay,
-  pricing,
-  releaseRedirect,
-}) {
-  return {
-    pickupDateISO,
-    returnDateISO,
-    pickupTime,
-    returnTime,
-    pickupLocation,
-    returnLocation,
-    pickupDateDisplay,
-    returnDateDisplay,
-    pickupLocationDisplay,
-    returnLocationDisplay,
-    rentalDays: pricing.rentalDays,
-    deliveryPrice: pricing.deliveryPrice,
-    returnPrice: pricing.returnPrice,
-    totalPrice: pricing.totalPrice,
-    releaseRedirect,
-  };
-}
-
-function buildViewModel(car, basePayload, overrides = {}) {
-  return {
-    title: 'Order Car',
-    car,
-    pickupDate: basePayload.pickupDateDisplay,
-    pickupTime: basePayload.pickupTime || '',
-    returnDate: basePayload.returnDateDisplay,
-    returnTime: basePayload.returnTime || '',
-    pickupLocation: basePayload.pickupLocation,
-    returnLocation: basePayload.returnLocation,
-    pickupLocationDisplay: basePayload.pickupLocationDisplay,
-    returnLocationDisplay: basePayload.returnLocationDisplay,
-    pickupDateISO: basePayload.pickupDateISO,
-    returnDateISO: basePayload.returnDateISO,
-    rentalDays: basePayload.rentalDays,
-    deliveryPrice: basePayload.deliveryPrice,
-    returnPrice: basePayload.returnPrice,
-    totalPrice: basePayload.totalPrice,
-    fullName: '',
-    phoneNumber: '',
-    email: '',
-    address: '',
-    hotelName: '',
-    existingReservation: null,
-    releaseRedirect: basePayload.releaseRedirect,
-    message: null,
-    ...overrides,
-  };
-}
+const { validateBookingDates } = require('../utils/bookingValidation');
+const {
+  checkCarAvailabilityForRange,
+  createPendingReservation,
+  findActiveReservationBySession,
+} = require('../services/reservationService');
+const {
+  buildBaseOrderPayload,
+  buildOrderViewModel,
+} = require('../services/orderViewModelService');
 
 module.exports.getOrderCar = async (req, res, next) => {
   try {
@@ -98,12 +41,25 @@ module.exports.getOrderCar = async (req, res, next) => {
       return res.status(404).send('Car not found.');
     }
 
-    const start = parseSofiaDate(pickupDateISO, pickupTime || '00:00');
-    const end = parseSofiaDate(returnDateISO, returnTime || '23:59');
+    const {
+      isValid,
+      errors: bookingErrors,
+      startDate,
+      endDate,
+      rentalDays,
+    } = validateBookingDates({
+      pickupDate: pickupDateISO,
+      returnDate: returnDateISO,
+      pickupTime: pickupTime || '00:00',
+      returnTime: returnTime || '23:59',
+    });
 
-    if (!start || !end || Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || start >= end) {
+    if (!isValid || !startDate || !endDate) {
       return res.status(400).send('Invalid booking dates.');
     }
+
+    const start = startDate;
+    const end = endDate;
 
     const pricing = computeBookingPrice(car, start, end, pickupLocation, returnLocation);
     if (!pricing || !Number.isFinite(pricing.totalPrice) || pricing.totalPrice <= 0) {
@@ -117,7 +73,7 @@ module.exports.getOrderCar = async (req, res, next) => {
     const sessionId = getSessionId(req);
     const now = new Date();
 
-    const basePayload = buildBasePayload({
+    const basePayload = buildBaseOrderPayload({
       pickupDateISO,
       returnDateISO,
       pickupTime,
@@ -132,29 +88,36 @@ module.exports.getOrderCar = async (req, res, next) => {
       releaseRedirect: req.originalUrl,
     });
 
-    const renderOrderPage = (overrides = {}, status = 200) =>
-      res.status(status).render('orderMain', buildViewModel(car, basePayload, overrides));
+    const renderOrderPage = (overrides = {}, status = 200) => {
+      const viewModel = buildOrderViewModel(car, basePayload, {
+        message: overrides.message ?? null,
+        existingReservation: overrides.existingReservation ?? null,
+      });
 
-    const existingForSession = await Reservation.findOne({
-      sessionId,
-      status: { $in: ACTIVE_RESERVATION_STATUSES },
-      holdExpiresAt: { $gt: now },
-    }).populate('carId', 'name');
+      // Use CSRF token prepared by route-level middleware
+      if (res.locals && res.locals.csrfToken) {
+        viewModel.csrfToken = res.locals.csrfToken;
+      }
 
+      return res.status(status).render('orderMain', viewModel);
+    };
+
+    let existingForSession = await findActiveReservationBySession(req);
     if (existingForSession) {
+      await existingForSession.populate('carId', 'name');
+
       return renderOrderPage({
         message: 'You already have an active reservation. Please complete or release it before starting another.',
         existingReservation: buildExistingReservationSummary(existingForSession),
       });
     }
 
-    const overlappingReservation = await Reservation.findOne({
+    const { overlappingReservation, bookedOverlap } = await checkCarAvailabilityForRange({
       carId: car._id,
-      status: { $in: ACTIVE_RESERVATION_STATUSES },
-      holdExpiresAt: { $gt: now },
-      pickupDate: { $lt: end },
-      returnDate: { $gt: start },
-    }).lean();
+      startDate: start,
+      endDate: end,
+      now,
+    });
 
     if (overlappingReservation) {
       return renderOrderPage({
@@ -162,42 +125,23 @@ module.exports.getOrderCar = async (req, res, next) => {
       });
     }
 
-    const bookedOverlap = await Car.findOne({
-      _id: car._id,
-      dates: {
-        $elemMatch: {
-          startDate: { $lt: end },
-          endDate: { $gt: start },
-        },
-      },
-    }).lean();
-
     if (bookedOverlap) {
       return renderOrderPage({
         message: 'Selected car is already booked in this period. Please choose different dates or a different car.',
       });
     }
 
-    await Reservation.create({
+    await createPendingReservation({
       carId: car._id,
       sessionId,
-      pickupDate: start,
+      startDate: start,
+      endDate: end,
       pickupTime,
-      returnDate: end,
       returnTime,
       pickupLocation,
       returnLocation,
-      rentalDays: pricing.rentalDays,
-      deliveryPrice: pricing.deliveryPrice,
-      returnPrice: pricing.returnPrice,
-      totalPrice: pricing.totalPrice,
-      fullName: '',
-      phoneNumber: '',
-      email: '',
-      address: '',
-      hotelName: '',
-      status: 'pending',
-      holdExpiresAt: new Date(Date.now() + HOLD_WINDOW_MS),
+      pricing,
+      // no contact provided here – defaults to empty strings
     });
 
     return renderOrderPage({ message: null, existingReservation: null });

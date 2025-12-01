@@ -1,9 +1,9 @@
 const Car = require('../models/Car');
 const { validationResult } = require('express-validator');
 const Reservation = require('../models/Reservation');
-const { parseSofiaDate } = require('../utils/timeZone');
 const { computeBookingPrice } = require('../utils/pricing');
 const { ACTIVE_RESERVATION_STATUSES, getSessionId } = require('../utils/reservationHelpers');
+const { validateBookingDates } = require('../utils/bookingValidation');
 // ---------------------------------------------
 // Controller: POST /search  (search results)
 // ---------------------------------------------
@@ -12,74 +12,87 @@ exports.postSearchCars = async (req, res, next) => {
   // Check if pick-up or return date is in the past – allow today
   const now = new Date();
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()); // 00:00 today
-11
-  const pickupDateInput = new Date(req.body['pickup-date']);
-  const returnDateInput = new Date(req.body['return-date']);
+
+  const pickupDateOnly = req.body['pickup-date'];
+  const returnDateOnly = req.body['return-date'];
   const pickupTimeInput = req.body['pickup-time'];
   const returnTimeInput = req.body['return-time'];
-  pickupDateInput.setHours(0, 0, 0, 0);   // normalise to midnight
-  returnDateInput.setHours(0, 0, 0, 0);
 
-  // ── Past-date checks ──
-  if (pickupDateInput < today)
-    errors.errors.push({ msg: 'Pick-up date can’t be in the past' });
-  if (returnDateInput < today)
-    errors.errors.push({ msg: 'Return date can’t be in the past' });
+  const {
+    isValid,
+    errors: bookingErrors,
+    startDate,
+    endDate,
+  } = validateBookingDates({
+    pickupDate: pickupDateOnly,
+    returnDate: returnDateOnly,
+    pickupTime: pickupTimeInput || '10:00',
+    returnTime: returnTimeInput || '10:00',
+    now,
+  });
 
-  // ── Logical order check ──
-  if (pickupDateInput > returnDateInput)
-    errors.errors.push({ msg: 'Return date must be after pick-up date' });
+  if (!isValid) {
+    bookingErrors.forEach((msg) => {
+      errors.errors.push({ msg });
+    });
+  }
 
   // ── Time-in-past check for today ──
   try {
+    const pickupDateInput = new Date(pickupDateOnly);
+    pickupDateInput.setHours(0, 0, 0, 0); // normalise to midnight
+
     if (pickupDateInput.getTime() === today.getTime() && pickupTimeInput) {
       const [ph, pm] = String(pickupTimeInput).split(':').map(Number);
       const pickupMinutes = (ph || 0) * 60 + (pm || 0);
       const nowMinutes = now.getHours() * 60 + now.getMinutes();
       if (pickupMinutes <= nowMinutes) {
-        errors.errors.push({ msg: 'Pick-up time must be later than the current time today' });
+        errors.errors.push({
+          msg: 'Pick-up time must be later than the current time today',
+        });
       }
     }
   } catch (_) {
     // ignore parse issues; express-validator will handle empty/invalid inputs
   }
+
   if (!errors.isEmpty()) {
     const cars = await Car.find();
     const tomorrow = new Date(today);
     tomorrow.setDate(today.getDate() + 1);
-    const pickupDateISO = (req.body['pickup-date'] || today.toISOString().split('T')[0]);
-    const returnDateISO = (req.body['return-date'] || tomorrow.toISOString().split('T')[0]);
+    const pickupDateISO =
+      pickupDateOnly || today.toISOString().split('T')[0];
+    const returnDateISO =
+      returnDateOnly || tomorrow.toISOString().split('T')[0];
 
-    const message = errors.array()[0].msg;   // ✅ one, clear message
-  
+    const message = errors.array()[0].msg; // ✅ one, clear message
+
     return res.status(422).render('index', {
       title: 'Search cars',
       cars,
-      message,                               // ← name matches the EJS check
+      message, // ← name matches the EJS check
       pickupDateISO,
       returnDateISO,
-      pickupDate : req.body['pickup-date'],
-      returnDate : req.body['return-date'],
-      pickupTime : req.body['pickup-time'],
-      returnTime : req.body['return-time'],
-      pickupLocation : req.body['pickup-location'],
-      returnLocation : req.body['return-location'],
+      pickupDate: pickupDateOnly,
+      returnDate: returnDateOnly,
+      pickupTime: pickupTimeInput,
+      returnTime: returnTimeInput,
+      pickupLocation: req.body['pickup-location'],
+      returnLocation: req.body['return-location'],
     });
   }
   
   try {
     /* 1. Pull & validate form data */
     const {
-      'pickup-date': pickupDateOnly,
       'pickup-time': pickupTime,
-      'return-date': returnDateOnly,
       'return-time': returnTime,
       'pickup-location': pickupLoc,
       'return-location': returnLoc
     } = req.body;
 
-    const pickupDate = parseSofiaDate(pickupDateOnly, pickupTime || '00:00');
-    const returnDate = parseSofiaDate(returnDateOnly, returnTime || '23:59');
+    const pickupDate = startDate;
+    const returnDate = endDate;
 
     /* 2. Rental day count */
     // Basic validation

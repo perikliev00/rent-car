@@ -1,29 +1,34 @@
 const stripe = require('../config/stripe');
-const mongoose = require('mongoose');
 const { validationResult } = require('express-validator');
 
 const Car = require('../models/Car');
 const Reservation = require('../models/Reservation');
-const Order = require('../models/Order');
 const { computeBookingPrice } = require('../utils/pricing');
-const { parseSofiaDate } = require('../utils/timeZone');
-const { addRange } = require('../utils/bookingSync');
 const {
-  ACTIVE_RESERVATION_STATUSES,
-  HOLD_WINDOW_MS,
   getSessionId,
   buildExistingReservationSummary,
 } = require('../utils/reservationHelpers');
+const { validateBookingDates } = require('../utils/bookingValidation');
 const { buildOrderPageViewModel, normalizeContactDetails } = require('../services/paymentService');
+const {
+  findActiveReservationBySession,
+  releaseActiveReservationForSession,
+  extendReservationHold,
+  checkCarAvailabilityForRange,
+  createPendingReservation,
+} = require('../services/reservationService');
+const {
+  finalizeReservationByStripeSessionId,
+} = require('../services/bookingFinalizationService');
 
-const TXN_OPTIONS = {
-  readPreference: 'primary',
-  readConcern: { level: 'local' },
-  writeConcern: { w: 'majority' },
-};
-
-function renderOrderPage(res, car, formData, message, options = {}) {
+function renderOrderPage(req, res, car, formData, message, options = {}) {
   const viewModel = buildOrderPageViewModel(car, formData, message, options);
+
+  // Use CSRF token prepared by route-level middleware
+  if (res.locals && res.locals.csrfToken) {
+    viewModel.csrfToken = res.locals.csrfToken;
+  }
+
   return res.status(options.statusCode || 422).render('orderMain', viewModel);
 }
 
@@ -46,14 +51,30 @@ exports.createCheckoutSession = async (req, res, next) => {
 
   if (!errors.isEmpty()) {
     const message = errors.array()[0].msg;
-    return renderOrderPage(res, car, formData, message);
+    return renderOrderPage(req, res, car, formData, message);
   }
 
-  const start = parseSofiaDate(formData.pickupDate, formData.pickupTime || '00:00');
-  const end = parseSofiaDate(formData.returnDate, formData.returnTime || '23:59');
-  if (!start || !end || Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || start >= end) {
-    return renderOrderPage(res, car, formData, 'Invalid booking dates. Please choose a different range.');
+  const {
+    isValid,
+    errors: bookingErrors,
+    startDate,
+    endDate,
+    rentalDays,
+  } = validateBookingDates({
+    pickupDate: formData.pickupDate,
+    returnDate: formData.returnDate,
+    pickupTime: formData.pickupTime || '00:00',
+    returnTime: formData.returnTime || '23:59',
+  });
+
+  if (!isValid || !startDate || !endDate) {
+    const message =
+      bookingErrors[0] || 'Invalid booking dates. Please choose a different range.';
+    return renderOrderPage(req, res, car, formData, message);
   }
+
+  const start = startDate;
+  const end = endDate;
 
   const sessionId = getSessionId(req);
   const now = new Date();
@@ -68,6 +89,7 @@ exports.createCheckoutSession = async (req, res, next) => {
     );
     if (!pricing || !Number.isFinite(pricing.totalPrice) || pricing.totalPrice <= 0) {
       return renderOrderPage(
+        req,
         res,
         car,
         formData,
@@ -77,11 +99,10 @@ exports.createCheckoutSession = async (req, res, next) => {
 
     const trimmedContact = normalizeContactDetails(formData);
 
-    let reservationDoc = await Reservation.findOne({
-      sessionId,
-      status: { $in: ACTIVE_RESERVATION_STATUSES },
-      holdExpiresAt: { $gt: now },
-    }).populate('carId', 'name');
+    let reservationDoc = await findActiveReservationBySession(req);
+    if (reservationDoc) {
+      await reservationDoc.populate('carId', 'name');
+    }
 
     let createdReservationThisStep = false;
 
@@ -97,6 +118,7 @@ exports.createCheckoutSession = async (req, res, next) => {
 
       if (!sameCar || !sameStart || !sameEnd) {
         return renderOrderPage(
+          req,
           res,
           car,
           formData,
@@ -121,19 +143,19 @@ exports.createCheckoutSession = async (req, res, next) => {
       reservationDoc.deliveryPrice = pricing.deliveryPrice;
       reservationDoc.returnPrice = pricing.returnPrice;
       reservationDoc.totalPrice = pricing.totalPrice;
-      reservationDoc.holdExpiresAt = new Date(Date.now() + HOLD_WINDOW_MS);
+      extendReservationHold(reservationDoc);
       reservationDoc.status = 'pending';
     } else {
-      const overlappingReservation = await Reservation.findOne({
+      const { overlappingReservation, bookedOverlap } = await checkCarAvailabilityForRange({
         carId: car._id,
-        status: { $in: ACTIVE_RESERVATION_STATUSES },
-        holdExpiresAt: { $gt: now },
-        pickupDate: { $lt: end },
-        returnDate: { $gt: start },
-      }).lean();
+        startDate: start,
+        endDate: end,
+        now,
+      });
 
       if (overlappingReservation) {
         return renderOrderPage(
+          req,
           res,
           car,
           formData,
@@ -147,17 +169,9 @@ exports.createCheckoutSession = async (req, res, next) => {
         );
       }
 
-      const bookedOverlap = await Car.findOne({
-        _id: car._id,
-        dates: {
-          $elemMatch: {
-            startDate: { $lt: end },
-            endDate: { $gt: start },
-          },
-        },
-      }).lean();
       if (bookedOverlap) {
         return renderOrderPage(
+          req,
           res,
           car,
           formData,
@@ -171,26 +185,17 @@ exports.createCheckoutSession = async (req, res, next) => {
         );
       }
 
-      reservationDoc = await Reservation.create({
+      reservationDoc = await createPendingReservation({
         carId: car._id,
         sessionId,
-        pickupDate: start,
+        startDate: start,
+        endDate: end,
         pickupTime: formData.pickupTime,
-        returnDate: end,
         returnTime: formData.returnTime,
         pickupLocation: formData.pickupLocation,
         returnLocation: formData.returnLocation,
-        rentalDays: pricing.rentalDays,
-        deliveryPrice: pricing.deliveryPrice,
-        returnPrice: pricing.returnPrice,
-        totalPrice: pricing.totalPrice,
-        fullName: trimmedContact.fullName,
-        phoneNumber: trimmedContact.phoneNumber,
-        email: trimmedContact.email,
-        address: trimmedContact.address,
-        hotelName: trimmedContact.hotelName,
-        status: 'pending',
-        holdExpiresAt: new Date(Date.now() + HOLD_WINDOW_MS),
+        pricing,
+        contact: trimmedContact,
       });
       createdReservationThisStep = true;
     }
@@ -226,6 +231,7 @@ exports.createCheckoutSession = async (req, res, next) => {
         await reservationDoc.save();
       }
       return renderOrderPage(
+        req,
         res,
         car,
         formData,
@@ -261,63 +267,37 @@ exports.handleCheckoutSuccess = async (req, res, next) => {
   }
 
   try {
-    // 1) Намираме резервацията по stripeSessionId (както е записан в createCheckoutSession)
-    const reservation = await Reservation.findOne({ stripeSessionId }).populate('carId');
-    console.log('🔎 Reservation found for this session?', !!reservation);
+    let result;
+    try {
+      result = await finalizeReservationByStripeSessionId(stripeSessionId);
+    } catch (err) {
+      console.error('❌ Error finalizing reservation in /success handler:', err);
+      return res.render('success', { title: 'Payment Processing' });
+    }
 
-    if (!reservation) {
+    console.log('🔎 Reservation found for this session?', !!result?.reservation);
+
+    if (!result.found) {
       console.warn('⚠️ No reservation found for stripeSessionId in /success:', stripeSessionId);
       // Показваме success, за да не плаши клиента, но логваме проблема
       return res.render('success', { title: 'Payment Success' });
     }
 
-    // Ако вече е финализирана – нищо не пипаме
-    if (reservation.status === 'confirmed') {
-      console.log('ℹ️ Reservation already confirmed in /success:', reservation._id.toString());
+    if (!result.finalized && result.reservation?.status === 'confirmed') {
+      console.log(
+        'ℹ️ Reservation already confirmed in /success:',
+        result.reservation._id.toString()
+      );
       return res.render('success', { title: 'Payment Success' });
     }
 
-    const carId = reservation.carId?._id || reservation.carId;
-
-    try {
-      // 2) Добавяме диапазона към Car.dates
-      await addRange(carId, reservation.pickupDate, reservation.returnDate, null);
-
-      // 3) Създаваме Order
-      await Order.create({
-        carId,
-        pickupDate: reservation.pickupDate,
-        pickupTime: reservation.pickupTime,
-        returnDate: reservation.returnDate,
-        returnTime: reservation.returnTime,
-        pickupLocation: reservation.pickupLocation,
-        returnLocation: reservation.returnLocation,
-        rentalDays: reservation.rentalDays,
-        deliveryPrice: reservation.deliveryPrice,
-        returnPrice: reservation.returnPrice,
-        totalPrice: reservation.totalPrice,
-        fullName: reservation.fullName,
-        phoneNumber: reservation.phoneNumber,
-        email: reservation.email,
-        address: reservation.address,
-        hotelName: reservation.hotelName,
-      });
-
-      // 4) Обновяваме резервацията
-      reservation.status = 'confirmed';
-      reservation.holdExpiresAt = new Date();
-      // stripePaymentIntentId може да остане null засега – не ни пречи
-      await reservation.save();
-
+    if (result.finalized && result.reservation) {
       console.log(
         '✅ Reservation confirmed via /success handler:',
-        reservation._id.toString(),
+        result.reservation._id.toString(),
         'for stripeSessionId =',
         stripeSessionId
       );
-    } catch (err) {
-      console.error('❌ Error finalizing reservation in /success handler:', err);
-      return res.render('success', { title: 'Payment Processing' });
     }
 
     // 5) Показваме success страница
@@ -331,45 +311,29 @@ exports.handleCheckoutSuccess = async (req, res, next) => {
 
 
 exports.handleCheckoutCancel = async (req, res) => {
-  const stripeSessionId = req.query.session_id;
-  if (stripeSessionId) {
-    try {
-      await Reservation.findOneAndUpdate(
-        { stripeSessionId, status: { $in: ACTIVE_RESERVATION_STATUSES } },
-        { status: 'cancelled', holdExpiresAt: new Date() }
-      );
-    } catch (err) {
-      console.error('Cancel handler error:', err);
-    }
+  try {
+    await releaseActiveReservationForSession(req);
+  } catch (err) {
+    console.error('Cancel handler error:', err);
   }
 
   res.send('Payment cancelled. You can start a new reservation when ready.');
 };
 
 exports.releaseActiveReservation = async (req, res) => {
-  const sessionId = getSessionId(req);
-  const now = new Date();
   const wantsJson =
     req.headers.accept && req.headers.accept.includes('application/json');
   const redirectTo = req.body.redirect || req.get('referer') || '/';
 
   try {
-    const reservation = await Reservation.findOne({
-      sessionId,
-      status: { $in: ACTIVE_RESERVATION_STATUSES },
-      holdExpiresAt: { $gt: now },
-    });
+    const { cancelled } = await releaseActiveReservationForSession(req);
 
-    if (!reservation) {
+    if (!cancelled) {
       if (wantsJson) {
         return res.status(404).json({ ok: false, message: 'No active reservation.' });
       }
       return res.redirect(redirectTo);
     }
-
-    reservation.status = 'cancelled';
-    reservation.holdExpiresAt = new Date();
-    await reservation.save();
 
     if (wantsJson) {
       return res.json({ ok: true });
@@ -415,56 +379,29 @@ exports.handleStripeWebhook = async (req, res) => {
     console.log(`${logPrefix} checkout.session.completed for session ${stripeSessionId}`);
 
     try {
-      const reservation = await Reservation.findOne({ stripeSessionId }).populate('carId');
-      console.log(`${logPrefix} Reservation lookup result:`, !!reservation);
+      const result = await finalizeReservationByStripeSessionId(stripeSessionId, {
+        logPrefix,
+        requireActiveStatus: true,
+      });
 
-      if (!reservation) {
-        console.warn(`${logPrefix} ⚠️ No reservation for stripeSessionId ${stripeSessionId}`);
-        return res.status(200).json({ received: true });
-      }
+      console.log(`${logPrefix} Reservation lookup result:`, !!result?.reservation);
 
-      if (!ACTIVE_RESERVATION_STATUSES.includes(reservation.status)) {
+      if (!result.found) {
         console.warn(
-          `${logPrefix} ⚠️ Reservation status is not active`,
-          reservation._id.toString(),
-          'status=',
-          reservation.status
+          `${logPrefix} ⚠️ No reservation for stripeSessionId ${stripeSessionId}`
         );
         return res.status(200).json({ received: true });
       }
 
-      const carId = reservation.carId?._id || reservation.carId;
-
-      await addRange(carId, reservation.pickupDate, reservation.returnDate, null);
-      console.log(`${logPrefix} ✅ Car availability updated for car ${carId}`);
-
-      await Order.create({
-        carId,
-        pickupDate: reservation.pickupDate,
-        pickupTime: reservation.pickupTime,
-        returnDate: reservation.returnDate,
-        returnTime: reservation.returnTime,
-        pickupLocation: reservation.pickupLocation,
-        returnLocation: reservation.returnLocation,
-        rentalDays: reservation.rentalDays,
-        deliveryPrice: reservation.deliveryPrice,
-        returnPrice: reservation.returnPrice,
-        totalPrice: reservation.totalPrice,
-        fullName: reservation.fullName,
-        phoneNumber: reservation.phoneNumber,
-        email: reservation.email,
-        address: reservation.address,
-        hotelName: reservation.hotelName,
-      });
-      console.log(`${logPrefix} ✅ Order document created`);
-
-      reservation.status = 'confirmed';
-      reservation.holdExpiresAt = new Date();
-      await reservation.save();
-
-      console.log(
-        `${logPrefix} ✅ Reservation ${reservation._id.toString()} marked as confirmed`
-      );
+      if (result.reason === 'status_not_active' && result.reservation) {
+        console.warn(
+          `${logPrefix} ⚠️ Reservation status is not active`,
+          result.reservation._id.toString(),
+          'status=',
+          result.reservation.status
+        );
+        return res.status(200).json({ received: true });
+      }
     } catch (err) {
       console.error(`${logPrefix} ❌ Error inside webhook handler:`, err);
     }
