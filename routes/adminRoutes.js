@@ -2,7 +2,6 @@
 const express = require('express');
 // Create a new router instance
 const router = express.Router();
-const csrf = require('csurf');
 // Admin controller: dashboard, orders, and cars logic
 const adminController = require('../controllers/adminController');
 // Contact messages controller (admin side)
@@ -13,17 +12,9 @@ const { requireAdmin } = require('../middleware/auth');
 const { upload } = require('../middleware/upload');
 // express-validator: validate/normalize incoming form data
 const { body } = require('express-validator');
+// CSRF shared middleware
+const { csrfProtection, setCsrfToken } = require('../middleware/csrf');
 // Categories feature removed
-
-const csrfProtection = csrf();
-const setCsrfToken = (req, res, next) => {
-  try {
-    res.locals.csrfToken = req.csrfToken();
-    next();
-  } catch (err) {
-    next(err);
-  }
-};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Admin dashboard and Orders

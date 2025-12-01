@@ -1,19 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const supportController = require('../controllers/supportController');
-const csrf = require('csurf');
-
-const csrfProtection = csrf();
-const setCsrfToken = (req, res, next) => {
-  if (typeof req.csrfToken === 'function') {
-    try {
-      res.locals.csrfToken = req.csrfToken();
-    } catch (err) {
-      return next(err);
-    }
-  }
-  return next();
-};
+const { csrfProtection, setCsrfToken } = require('../middleware/csrf');
 
 // Support routes
 router.get('/support/phone', supportController.getPhoneSupport);

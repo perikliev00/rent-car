@@ -3,20 +3,8 @@ const router = express.Router();
 const { body } = require('express-validator');
 const authController = require('../controllers/authController');
 const { requireGuest, requireAuth } = require('../middleware/auth');
-const csrf = require('csurf');
 const { authLimiter } = require('../middleware/rateLimit');
-
-const csrfProtection = csrf();
-const setCsrfToken = (req, res, next) => {
-	if (typeof req.csrfToken === 'function') {
-		try {
-			res.locals.csrfToken = req.csrfToken();
-		} catch (err) {
-			return next(err);
-		}
-	}
-	return next();
-};
+const { csrfProtection, setCsrfToken } = require('../middleware/csrf');
 
 router.get('/login', requireGuest, csrfProtection, setCsrfToken, authController.getLogin);
 router.post(

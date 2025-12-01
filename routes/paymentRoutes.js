@@ -2,13 +2,12 @@ const express = require('express');
 const router = express.Router();
 const paymentController = require('../controllers/payment');
 const { body } = require('express-validator');
-const csrf = require('csurf');
-
-const csrfProtection = csrf();
+const { csrfProtection, setCsrfToken } = require('../middleware/csrf');
 
 router.post(
   '/create-checkout-session',
   csrfProtection,
+  setCsrfToken,
   [
     body('fullName').notEmpty().withMessage('Please enter your full name'),
     body('phoneNumber')

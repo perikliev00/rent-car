@@ -8,20 +8,9 @@ const availableCarsController = require('../controllers/availableCars'); // Ensu
 const orderCarController = require('../controllers/orderCar'); // Ensure you have a controller for handling requests
 const aboutController = require('../controllers/aboutController'); // About controller
 const contactController = require('../controllers/contactController'); // Contact controller
-const csrf = require('csurf');
 const { contactLimiter } = require('../middleware/rateLimit');
+const { csrfProtection, setCsrfToken } = require('../middleware/csrf');
 // Categories feature removed
-const csrfProtection = csrf();
-const setCsrfToken = (req, res, next) => {
-  if (typeof req.csrfToken === 'function') {
-    try {
-      res.locals.csrfToken = req.csrfToken();
-    } catch (err) {
-      return next(err);
-    }
-  }
-  return next();
-};
 
 // Get all cars or filter cars based on query parameters
 router.get('/', csrfProtection, setCsrfToken, homeController.getHome);

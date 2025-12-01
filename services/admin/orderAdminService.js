@@ -12,6 +12,10 @@ const {
   removeRange,
 } = require('../../utils/bookingSync');
 const { findActiveReservationHold } = require('./reservationAdminService');
+const {
+  trimContactDetails,
+  contactFieldsIncomplete,
+} = require('../contactService');
 
 const CONTACT_REQUIRED_MESSAGE =
   'Full name, phone number, email, and address are required.';
@@ -144,19 +148,6 @@ function buildOrderFormDefaultsFromPayload(payload = {}) {
 
 async function getCarsList() {
   return Car.find({}).sort({ name: 1 }).lean();
-}
-
-function trimContactFields(payload = {}) {
-  return {
-    fullName: (payload.fullName || '').trim(),
-    phoneNumber: (payload.phoneNumber || '').trim(),
-    email: (payload.email || '').trim(),
-    address: (payload.address || '').trim(),
-  };
-}
-
-function contactFieldsIncomplete(contact) {
-  return Object.values(contact).some((value) => !value);
 }
 
 function parseDateRange(pickupDate, pickupTime, returnDate, returnTime) {
@@ -393,7 +384,7 @@ async function getCarAvailability(carId, query = {}) {
 }
 
 async function createOrder(payload) {
-  const trimmedContact = trimContactFields(payload);
+  const trimmedContact = trimContactDetails(payload);
   if (contactFieldsIncomplete(trimmedContact)) {
     return buildOrderNewErrorResult(payload, CONTACT_REQUIRED_MESSAGE);
   }
@@ -568,7 +559,7 @@ function extractStoredRange(carDoc, prevStart, prevEnd) {
 }
 
 async function updateOrder(orderId, payload) {
-  const trimmedContact = trimContactFields(payload);
+  const trimmedContact = trimContactDetails(payload);
   if (contactFieldsIncomplete(trimmedContact)) {
     return buildOrderEditErrorResult(
       orderId,

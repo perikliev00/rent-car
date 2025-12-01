@@ -1,51 +1,66 @@
 const { formatDateForDisplay, formatLocationName } = require('../utils/dateFormatter');
+const {
+  buildBaseOrderPayload,
+  buildOrderViewModel,
+} = require('./orderViewModelService');
+const { trimContactDetails } = require('./contactService');
 
 function buildOrderPageViewModel(car, formData, message, options = {}) {
   const pickupDateISO = formData.pickupDate;
   const returnDateISO = formData.returnDate;
-  const pickupDateDisplay = formatDateForDisplay(formData.pickupDate);
-  const returnDateDisplay = formatDateForDisplay(formData.returnDate);
-  const pickupLocationDisplay = formatLocationName(formData.pickupLocation);
-  const returnLocationDisplay = formatLocationName(formData.returnLocation);
-  const releaseRedirect =
-    options.releaseRedirect || formData.releaseRedirect || formData.currentUrl || '';
+  const pickupTime = formData.pickupTime;
+  const returnTime = formData.returnTime;
+  const pickupLocation = formData.pickupLocation;
+  const returnLocation = formData.returnLocation;
 
-  return {
-    title: 'Order Car',
-    car,
-    message,
-    pickupDate: pickupDateDisplay,
-    pickupTime: formData.pickupTime,
-    returnDate: returnDateDisplay,
-    returnTime: formData.returnTime,
-    pickupLocation: formData.pickupLocation,
-    returnLocation: formData.returnLocation,
-    pickupLocationDisplay,
-    returnLocationDisplay,
-    pickupDateISO,
-    returnDateISO,
+  const pickupDateDisplay = formatDateForDisplay(pickupDateISO);
+  const returnDateDisplay = formatDateForDisplay(returnDateISO);
+  const pickupLocationDisplay = formatLocationName(pickupLocation);
+  const returnLocationDisplay = formatLocationName(returnLocation);
+
+  const pricing = {
     rentalDays: options.rentalDays ?? formData.rentalDays,
     deliveryPrice: options.deliveryPrice ?? formData.deliveryPrice,
     returnPrice: options.returnPrice ?? formData.returnPrice,
     totalPrice: options.totalPrice ?? formData.totalPrice,
+  };
+
+  const basePayload = buildBaseOrderPayload({
+    pickupDateISO,
+    returnDateISO,
+    pickupTime,
+    returnTime,
+    pickupLocation,
+    returnLocation,
+    pickupDateDisplay,
+    returnDateDisplay,
+    pickupLocationDisplay,
+    returnLocationDisplay,
+    pricing,
+    releaseRedirect:
+      options.releaseRedirect || formData.releaseRedirect || formData.currentUrl || '',
+  });
+
+  const contact = {
     fullName: formData.fullName,
     phoneNumber: formData.phoneNumber,
     email: formData.email,
     address: formData.address,
     hotelName: formData.hotelName,
-    existingReservation: options.existingReservation || null,
-    releaseRedirect,
   };
+
+  const viewModel = buildOrderViewModel(car, basePayload, {
+    contact,
+    existingReservation: options.existingReservation || null,
+    message: message || null,
+    title: 'Order Car',
+  });
+
+  return viewModel;
 }
 
 function normalizeContactDetails(formData = {}) {
-  return {
-    fullName: (formData.fullName || '').trim(),
-    phoneNumber: (formData.phoneNumber || '').trim(),
-    email: (formData.email || '').trim(),
-    address: (formData.address || '').trim(),
-    hotelName: (formData.hotelName || '').trim(),
-  };
+  return trimContactDetails(formData);
 }
 
 module.exports = {
