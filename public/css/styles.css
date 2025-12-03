@@ -36,6 +36,8 @@ body {
     color: var(--text-primary);
     margin: 0;
     padding: 0;
+    /* Dark fallback so we don't flash white while the hero image loads */
+    background-color: var(--background-dark);
     background: linear-gradient(rgba(10, 10, 10, 0.4), rgba(10, 10, 10, 0.4)), 
                 url('/images/g-class-home.jpg');
     background-size: cover;
