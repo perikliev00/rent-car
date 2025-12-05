@@ -1,5 +1,6 @@
 /* Contacts page specific styles */
 .contacts-page {
+  background-color: #050505; /* dark fallback while hero image loads */
   background: linear-gradient(rgba(17, 17, 17, 0.4), rgba(17, 17, 17, 0.4)), 
               url('/images/g-class-contact.jpg');
   background-size: cover;

@@ -28,7 +28,13 @@
 /* -------------------------------------------------
    Reset & globals
 --------------------------------------------------*/
-html, body { overflow-x: hidden; }
+html,
+body {
+    min-height: 100%;
+    overflow-x: hidden;
+    /* Dark fallback so we don't flash white while any background image loads */
+    background-color: var(--background-dark);
+}
 body {
     position: relative;
     font-family: 'Inter', 'Poppins', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
@@ -36,8 +42,6 @@ body {
     color: var(--text-primary);
     margin: 0;
     padding: 0;
-    /* Dark fallback so we don't flash white while the hero image loads */
-    background-color: var(--background-dark);
     background: linear-gradient(rgba(10, 10, 10, 0.4), rgba(10, 10, 10, 0.4)), 
                 url('/images/g-class-home.jpg');
     background-size: cover;

@@ -1,5 +1,6 @@
 /* Support pages specific styles */
 .support-page {
+  background-color: #050505; /* dark fallback while hero image loads */
   background: linear-gradient(rgba(17, 17, 17, 0.4), rgba(17, 17, 17, 0.4)), 
               url('/images/audi-support.jpg');
   background-size: cover;
