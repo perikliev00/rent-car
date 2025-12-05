@@ -66,7 +66,7 @@ exports.postSearchCars = async (req, res, next) => {
       returnDateOnly || tomorrow.toISOString().split('T')[0];
 
     const message = errors.array()[0].msg; // ✅ one, clear message
-
+  
     return res.status(422).render('index', {
       title: 'Search cars',
       cars,

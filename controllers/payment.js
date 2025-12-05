@@ -311,10 +311,10 @@ exports.handleCheckoutSuccess = async (req, res, next) => {
 
 
 exports.handleCheckoutCancel = async (req, res) => {
-  try {
+    try {
     await releaseActiveReservationForSession(req);
-  } catch (err) {
-    console.error('Cancel handler error:', err);
+    } catch (err) {
+      console.error('Cancel handler error:', err);
   }
 
   res.send('Payment cancelled. You can start a new reservation when ready.');
