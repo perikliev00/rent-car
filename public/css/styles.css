@@ -244,6 +244,89 @@ input, select, textarea {
 .logo:hover {
     filter: drop-shadow(0 0 10px var(--shadow-primary));
 }
+
+.header-search {
+    position: relative;
+}
+
+/* Dropdown container */
+.header-search__dropdown {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    z-index: 50;
+    margin-top: 4px;
+    background: rgba(0, 0, 0, 0.95);
+    border-radius: 10px;
+    overflow: hidden;
+    max-height: 320px;
+    backdrop-filter: blur(6px);
+    box-shadow: 0 14px 40px rgba(0, 0, 0, 0.6);
+    border: 1px solid rgba(255, 210, 63, 0.25);
+    /* allow scroll when there are many items */
+    overflow-y: auto;
+}
+
+.header-search__dropdown.hidden {
+    display: none;
+}
+
+.header-search__list {
+    list-style: none;
+    margin: 0;
+    padding: 4px 0;
+}
+
+/* Single-line item: title on the left, badge on the right */
+.header-search__item {
+    padding: 8px 12px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    font-size: 0.9rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+}
+
+.header-search__item:last-child {
+    border-bottom: none;
+}
+
+.header-search__item:hover,
+.header-search__item.is-active {
+    background: rgba(255, 210, 63, 0.15);
+}
+
+/* Title */
+.header-search__item-title {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: #ffffff;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* Small pill on the right (Public / Support / Admin / Legal) */
+.header-search__item-badge {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 0.7rem;
+    background: #ffd23f;
+    color: #000;
+    font-weight: 700;
+}
+
+/* URL text is no longer used – keep it invisible just in case */
+.header-search__item-url {
+    display: none;
+}
 .desktop-nav {
     display: flex;
     align-items: center;
