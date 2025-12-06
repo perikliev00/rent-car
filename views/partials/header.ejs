@@ -11,10 +11,25 @@
         <svg class="icon icon-md" aria-hidden="true"><use href="/images/icons.svg#icon-car"></use></svg>
         <span>LuxRide</span>
     </a>
-    <div class="header-search" role="search">
-        <svg class="icon icon-md" aria-hidden="true"><use href="/images/icons.svg#icon-search"></use></svg>
-        <input type="search" placeholder="Search products, pages, help…" aria-label="Search site" />
-    </div>
+    <form
+      class="header-search"
+      role="search"
+      method="GET"
+      action="/search"
+    >
+      <svg class="icon icon-md" aria-hidden="true">
+        <use href="/images/icons.svg#icon-search"></use>
+      </svg>
+      <input
+        type="search"
+        name="q"
+        class="header-search__input"
+        placeholder="Search products, pages, help…"
+        aria-label="Search site"
+        value="<%= typeof searchQuery !== 'undefined' ? searchQuery : '' %>"
+        autocomplete="off"
+      />
+    </form>
     <nav class="desktop-nav">
         <ul class="flex items-center">
             <li data-label="home"><a class="hover:text-brand" href="/">Home</a></li>
