@@ -63,29 +63,60 @@
       toggle.setAttribute('aria-expanded','true');
       overlay.classList.add('show');
       disableScroll();
-      setTimeout(() => { if (search) search.focus(); }, 0);
+      // Removed auto-focus on search input to prevent keyboard from opening automatically
     }
-    function close(){
-      menu.classList.remove('open');
+
+    function close(force = false){
+      // Always reset aria and classes first
       toggle.setAttribute('aria-expanded','false');
+      menu.classList.remove('open');
       overlay.classList.remove('show');
-      enableScroll();
-      // Wait for transition end before hiding
-      const onEnd = () => { menu.hidden = true; menu.removeEventListener('transitionend', onEnd); };
+
+      // If forcing or we're on desktop, hide immediately with no animation
+      if (force || window.innerWidth >= 1280) {
+        menu.hidden = true;
+        enableScroll();
+        return;
+      }
+
+      let handled = false;
+      const onEnd = () => {
+        if (handled) return;
+        handled = true;
+        menu.hidden = true;
+        menu.removeEventListener('transitionend', onEnd);
+        enableScroll();
+      };
+
+      // Normal animated close path
       menu.addEventListener('transitionend', onEnd);
+      // Fallback in case transitionend never fires
+      setTimeout(onEnd, 250);
     }
-    function toggleMenu(){ menu.classList.contains('open') ? close() : open(); }
+
+    function toggleMenu(){
+      if (menu.classList.contains('open') && !menu.hidden) {
+        close();
+      } else {
+        open();
+      }
+    }
 
     toggle.addEventListener('click', toggleMenu);
-    // Visually swap burger to X by hiding header button when open
-    function updateHeaderButton(){ toggle.style.visibility = menu.classList.contains('open') ? 'hidden' : 'visible'; }
-    const observer = new MutationObserver(updateHeaderButton);
-    observer.observe(menu, { attributes: true, attributeFilter: ['class'] });
-    updateHeaderButton();
-    if (closeBtn) closeBtn.addEventListener('click', close);
-    overlay.addEventListener('click', close);
-    menu.querySelectorAll('a').forEach(a => a.addEventListener('click', close));
-    window.addEventListener('resize', () => { if (window.innerWidth > 768) close(); });
+    if (closeBtn) closeBtn.addEventListener('click', () => close());
+    overlay.addEventListener('click', (e) => {
+      e.stopPropagation();
+      close(true); // force immediate close, no animation or leftover overlay
+    });
+    menu.querySelectorAll('a').forEach(a => {
+      a.addEventListener('click', () => close(true));
+    });
+    window.addEventListener('resize', () => {
+      if (window.innerWidth >= 1280) {
+        // Hard reset mobile state when moving to full desktop width
+        close(true);
+      }
+    });
 
     // Submenu toggles
     menu.querySelectorAll('.submenu-toggle').forEach(btn => {

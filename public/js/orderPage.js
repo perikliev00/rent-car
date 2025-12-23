@@ -350,3 +350,96 @@ document.addEventListener('keydown', function(e) {
         e.target.click();
     }
 });
+
+// Remove any validation banners/messages and input error styles
+function clearValidationErrors() {
+  document.querySelectorAll(
+    '#formErrors, #validation-summary, .validation-summary, .validation-banner, .error-banner, .form-error, .server-error, .order-error, .validation-error, .error-message'
+  ).forEach(el => el.remove());
+
+  document.querySelectorAll('[data-error-for], .field-error, .input-error-text').forEach(el => {
+    el.textContent = '';
+    el.classList.add('hidden');
+  });
+
+  document.querySelectorAll('.has-error, .input-error, .error, .error-border').forEach(el => {
+    el.classList.remove('has-error', 'input-error', 'error', 'error-border');
+  });
+
+  document.querySelectorAll('input[aria-invalid="true"], textarea[aria-invalid="true"], select[aria-invalid="true"]').forEach(el => {
+    el.setAttribute('aria-invalid', 'false');
+    if (el.setCustomValidity) el.setCustomValidity('');
+  });
+}
+
+// Re-enable form inputs and submit button after releasing reservation
+function reenableOrderForm() {
+  const form = document.querySelector('.user-details-form');
+  if (!form) return;
+
+  form.querySelectorAll('input, textarea, select, button').forEach(el => {
+    el.disabled = false;
+    el.style.opacity = '';
+    el.style.cursor = '';
+  });
+
+  const submitButton = form.querySelector('button[type="submit"]');
+  if (submitButton) submitButton.innerHTML = 'CONFIRM ORDER';
+}
+
+// ---- Release reservation via AJAX and remove banner ----
+document.addEventListener('DOMContentLoaded', function () {
+  const releaseForm = document.getElementById('release-reservation-form');
+  if (!releaseForm) return;
+
+  releaseForm.addEventListener('submit', async function (e) {
+    e.preventDefault();
+
+    const btn = releaseForm.querySelector('button[type="submit"]');
+    const csrf = releaseForm.querySelector('input[name="_csrf"]')?.value || '';
+    const endpoint = releaseForm.getAttribute('data-release-endpoint') || '/reservations/release';
+
+    // small loading state
+    const oldText = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = 'Releasing...';
+
+    try {
+      const body = new URLSearchParams();
+      body.set('_csrf', csrf);
+
+      const resp = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
+          'Accept': 'application/json'
+        },
+        body: body.toString()
+      });
+
+      if (!resp.ok) {
+        // fallback: if server doesn’t return JSON, just try a soft reload
+        console.warn('Release reservation: non-OK response', resp.status);
+      }
+
+      // On success just remove the banner so the UI reflects server state
+      const banner = document.querySelector('.existing-reservation-banner');
+      if (banner) banner.remove();
+      clearValidationErrors();
+      reenableOrderForm();
+
+      // Optional: toast
+      if (typeof showNotification === 'function') {
+        showNotification('Reservation released. You can proceed.', 'success');
+      }
+    } catch (err) {
+      console.error('Release reservation AJAX error:', err);
+      if (typeof showNotification === 'function') {
+        showNotification('Failed to release reservation. Please try again.', 'error');
+      }
+    } finally {
+      btn.disabled = false;
+      btn.textContent = oldText;
+    }
+  });
+});
