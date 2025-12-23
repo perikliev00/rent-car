@@ -27,7 +27,37 @@ exports.getHome = async (req, res, next) => {
       'seats-4-5': { seats: { $in: [4,5] } },
       'seats-6-9': { seats: { $in: [6,7,8,9] } },
     };
-    const mongoFilter = categoryToFilter[category] || {};
+    // Build optional filter conditions from query params (UI-only earlier; now functional)
+    const qTransmission = (req.query.transmission || '').toLowerCase();
+    const qFuel = (req.query.fuelType || '').toLowerCase();
+    const qSeatsMin = Number.parseInt(req.query.seatsMin, 10);
+    const qSeatsMax = Number.parseInt(req.query.seatsMax, 10);
+    const qPriceMin = Number.parseFloat(req.query.priceMin);
+    const qPriceMax = Number.parseFloat(req.query.priceMax);
+
+    const andFilters = [];
+    const categoryFilter = categoryToFilter[category];
+    if (categoryFilter && Object.keys(categoryFilter).length) andFilters.push(categoryFilter);
+
+    if (qTransmission === 'automatic') andFilters.push({ transmission: 'Automatic' });
+    else if (qTransmission === 'manual') andFilters.push({ transmission: 'Manual' });
+
+    if (qFuel === 'petrol') andFilters.push({ fuelType: 'Petrol' });
+    else if (qFuel === 'diesel') andFilters.push({ fuelType: 'Diesel' });
+    else if (qFuel === 'hybrid') andFilters.push({ fuelType: 'Hybrid' });
+    else if (qFuel === 'electric') andFilters.push({ fuelType: 'Electric' });
+
+    const seatsRange = {};
+    if (Number.isFinite(qSeatsMin)) seatsRange.$gte = qSeatsMin;
+    if (Number.isFinite(qSeatsMax)) seatsRange.$lte = qSeatsMax;
+    if (Object.keys(seatsRange).length) andFilters.push({ seats: seatsRange });
+
+    const priceRange = {};
+    if (Number.isFinite(qPriceMin)) priceRange.$gte = qPriceMin;
+    if (Number.isFinite(qPriceMax)) priceRange.$lte = qPriceMax;
+    if (Object.keys(priceRange).length) andFilters.push({ price: priceRange });
+
+    const mongoFilter = andFilters.length > 1 ? { $and: andFilters } : (andFilters[0] || {});
 
     const totalCars = await Car.countDocuments(mongoFilter);
     const totalPages = Math.max(1, Math.ceil(totalCars / perPage));
@@ -72,7 +102,15 @@ exports.getHome = async (req, res, next) => {
       // pagination context for gallery
       currentPage: page,
       totalPages,
-      category
+      category,
+      filters: {
+        transmission: req.query.transmission || '',
+        fuelType: req.query.fuelType || '',
+        seatsMin: req.query.seatsMin || '',
+        seatsMax: req.query.seatsMax || '',
+        priceMin: req.query.priceMin || '',
+        priceMax: req.query.priceMax || '',
+      }
     });
   } catch (err) {
     console.error('getHome error:', err);

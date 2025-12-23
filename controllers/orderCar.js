@@ -104,10 +104,31 @@ module.exports.getOrderCar = async (req, res, next) => {
 
     let existingForSession = await findActiveReservationBySession(req);
     if (existingForSession) {
-      await existingForSession.populate('carId', 'name');
+      // ✅ New logic:
+      // If the user is in the same session and the active reservation has EXACTLY the same parameters
+      // (same car, same pickup/return dates and times, same pickup/return locations),
+      // then DO NOT show the red banner and DO NOT create a new reservation.
+      // Simply render the page normally as if the same reservation is still active.
 
+      const sameReservationParams =
+        String(existingForSession.carId) === String(car._id) &&
+        existingForSession.pickupDate?.getTime?.() === start.getTime() &&
+        existingForSession.returnDate?.getTime?.() === end.getTime() &&
+        existingForSession.pickupTime === pickupTime &&
+        existingForSession.returnTime === returnTime &&
+        existingForSession.pickupLocation === pickupLocation &&
+        existingForSession.returnLocation === returnLocation;
+
+      if (sameReservationParams) {
+        // Render the order page normally, without the red banner and without creating a new record
+        return renderOrderPage({ message: null, existingReservation: null });
+      }
+
+      // Otherwise keep the default behavior (show the active reservation banner)
+      await existingForSession.populate('carId', 'name');
       return renderOrderPage({
-        message: 'You already have an active reservation. Please complete or release it before starting another.',
+        message:
+          'You already have an active reservation. Please complete or release it before starting another.',
         existingReservation: buildExistingReservationSummary(existingForSession),
       });
     }

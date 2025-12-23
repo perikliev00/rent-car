@@ -88,7 +88,14 @@ exports.postSearchCars = async (req, res, next) => {
       'pickup-time': pickupTime,
       'return-time': returnTime,
       'pickup-location': pickupLoc,
-      'return-location': returnLoc
+      'return-location': returnLoc,
+      transmission,
+      fuelType,
+      priceMin,
+      priceMax,
+      seatsMin,
+      seatsMax,
+      category,
     } = req.body;
 
     const pickupDate = startDate;
@@ -171,11 +178,107 @@ exports.postSearchCars = async (req, res, next) => {
       };
     });
 
-    console.log('💰 Final cars:', previewCars.map(c => ({ id: c._id, total: c.totalPrice })));
+    // -----------------------------
+    // 5) Apply UI filters (post-pricing)
+    // -----------------------------
+    const norm = (v) => String(v ?? '').trim().toLowerCase();
+    const toNumOrUndef = (v) => {
+      if (v === undefined || v === null) return undefined;
+      const s = String(v).trim();
+      if (!s) return undefined;
+      const n = Number(s);
+      return Number.isFinite(n) ? n : undefined;
+    };
 
-    const sharedRentalDays = previewCars[0]?.rentalDays || 0;
-    const sharedDeliveryPrice = previewCars[0]?.deliveryPrice || 0;
-    const sharedReturnPrice = previewCars[0]?.returnPrice || 0;
+    // Category acts as a shortcut (do not use Car.category ObjectId)
+    const cat = norm(category);
+    let effectiveTransmission = norm(transmission);
+    let effectiveFuelType = norm(fuelType);
+    let effectiveSeatsMin = toNumOrUndef(seatsMin);
+    let effectiveSeatsMax = toNumOrUndef(seatsMax);
+
+    if (!effectiveTransmission && (cat === 'automatic' || cat === 'manual')) {
+      effectiveTransmission = cat;
+    }
+    if (
+      !effectiveFuelType &&
+      (cat === 'petrol' || cat === 'diesel' || cat === 'electric' || cat === 'hybrid')
+    ) {
+      effectiveFuelType = cat;
+    }
+    if (effectiveSeatsMin === undefined && effectiveSeatsMax === undefined) {
+      if (cat === 'seats-2-3') {
+        effectiveSeatsMin = 2;
+        effectiveSeatsMax = 3;
+      } else if (cat === 'seats-4-5') {
+        effectiveSeatsMin = 4;
+        effectiveSeatsMax = 5;
+      } else if (cat === 'seats-6-9') {
+        effectiveSeatsMin = 6;
+        effectiveSeatsMax = 9;
+      }
+    }
+
+    const effectivePriceMin = toNumOrUndef(priceMin);
+    const effectivePriceMax = toNumOrUndef(priceMax);
+
+    const filteredPreviewCars = previewCars.filter((car) => {
+      // Transmission match
+      if (effectiveTransmission) {
+        const carTx = norm(car.transmission);
+        if (carTx !== effectiveTransmission) return false;
+      }
+
+      // Fuel type match
+      if (effectiveFuelType) {
+        const carFuel = norm(car.fuelType);
+        if (carFuel !== effectiveFuelType) return false;
+      }
+
+      // Seats range
+      if (effectiveSeatsMin !== undefined) {
+        const s = Number(car.seats);
+        if (!Number.isFinite(s) || s < effectiveSeatsMin) return false;
+      }
+      if (effectiveSeatsMax !== undefined) {
+        const s = Number(car.seats);
+        if (!Number.isFinite(s) || s > effectiveSeatsMax) return false;
+      }
+
+      // Price/day (prefer computed unitPrice)
+      const unit = Number(car.unitPrice ?? car.price);
+      if (effectivePriceMin !== undefined) {
+        if (!Number.isFinite(unit) || unit < effectivePriceMin) return false;
+      }
+      if (effectivePriceMax !== undefined) {
+        if (!Number.isFinite(unit) || unit > effectivePriceMax) return false;
+      }
+
+      return true;
+    });
+
+    console.log('💰 Final cars:', filteredPreviewCars.map(c => ({ id: c._id, total: c.totalPrice })));
+
+    // -----------------------------
+    // 6) Pagination (POST)
+    // -----------------------------
+    const toInt = (v, fallback) => {
+      const n = parseInt(String(v ?? ''), 10);
+      return Number.isFinite(n) ? n : fallback;
+    };
+    const clamp = (n, min, max) => Math.min(max, Math.max(min, n));
+
+    const perPage = 3;
+    const totalCars = filteredPreviewCars.length;
+    const totalPages = Math.max(1, Math.ceil(totalCars / perPage));
+    const requestedPage = toInt(req.body.page, 1);
+    const currentPage = clamp(requestedPage, 1, totalPages);
+    const startIdx = (currentPage - 1) * perPage;
+    const pageCars = filteredPreviewCars.slice(startIdx, startIdx + perPage);
+
+    const sharedRentalDays = pageCars[0]?.rentalDays || 0;
+    const sharedDeliveryPrice = pageCars[0]?.deliveryPrice || 0;
+    const sharedReturnPrice = pageCars[0]?.returnPrice || 0;
 
     /* 6. Render */
     res.render('searchResults', {
@@ -189,7 +292,18 @@ exports.postSearchCars = async (req, res, next) => {
       returnTime,
       deliveryPrice: sharedDeliveryPrice,
       returnPrice: sharedReturnPrice,
-      cars: previewCars,
+      cars: pageCars,
+      currentPage,
+      totalPages,
+      filters: {
+        transmission: effectiveTransmission || '',
+        fuelType: effectiveFuelType || '',
+        priceMin: effectivePriceMin !== undefined ? String(effectivePriceMin) : (priceMin || ''),
+        priceMax: effectivePriceMax !== undefined ? String(effectivePriceMax) : (priceMax || ''),
+        seatsMin: effectiveSeatsMin !== undefined ? String(effectiveSeatsMin) : (seatsMin || ''),
+        seatsMax: effectiveSeatsMax !== undefined ? String(effectiveSeatsMax) : (seatsMax || ''),
+      },
+      category: cat || '',
     });
   } catch (err) {
     console.error(err);

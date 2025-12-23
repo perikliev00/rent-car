@@ -16,7 +16,10 @@ function fileFilter (req, file, cb) {
     const allowed = ['.png', '.jpg', '.jpeg', '.webp'];
     const ext = path.extname(file.originalname || '').toLowerCase();
     if (allowed.includes(ext)) return cb(null, true);
-    cb(new Error('Only images are allowed'));
+    // Mark that a file was rejected so validation middleware can catch it
+    req.fileRejected = true;
+    // Reject file without throwing error (prevents server crash)
+    cb(null, false);
 }
 
 const upload = multer({ storage, fileFilter, limits: { fileSize: 5 * 1024 * 1024 } });
