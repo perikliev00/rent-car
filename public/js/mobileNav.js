@@ -57,12 +57,16 @@
     const search = document.getElementById('mobileSearch');
     if(!toggle || !menu || !overlay) return;
 
+    // Robust scroll lock state
+    let scrollY = 0;
+    let scrollLocked = false;
+
     function open(){
       menu.hidden = false;
       menu.classList.add('open');
       toggle.setAttribute('aria-expanded','true');
       overlay.classList.add('show');
-      disableScroll();
+      lockScroll();
       // Removed auto-focus on search input to prevent keyboard from opening automatically
     }
 
@@ -75,7 +79,7 @@
       // If forcing or we're on desktop, hide immediately with no animation
       if (force || window.innerWidth >= 1280) {
         menu.hidden = true;
-        enableScroll();
+        unlockScroll();
         return;
       }
 
@@ -85,7 +89,7 @@
         handled = true;
         menu.hidden = true;
         menu.removeEventListener('transitionend', onEnd);
-        enableScroll();
+        unlockScroll();
       };
 
       // Normal animated close path
@@ -167,9 +171,51 @@
     menu.addEventListener('touchmove', onTouchMove, { passive: true });
     menu.addEventListener('touchend', onTouchEnd);
 
-    // Scroll lock
-    function disableScroll(){ document.documentElement.style.overflow='hidden'; document.body.style.overflow='hidden'; }
-    function enableScroll(){ document.documentElement.style.overflow=''; document.body.style.overflow=''; }
+    // Robust scroll lock using position:fixed (prevents mobile scroll bleed)
+    function lockScroll() {
+      if (scrollLocked) return;
+      scrollY = window.scrollY || window.pageYOffset || 0;
+      document.documentElement.style.overflow = 'hidden';
+      document.body.style.position = 'fixed';
+      document.body.style.top = `-${scrollY}px`;
+      document.body.style.left = '0';
+      document.body.style.right = '0';
+      document.body.style.width = '100%';
+      scrollLocked = true;
+    }
+
+    function unlockScroll() {
+      if (!scrollLocked) return;
+      const y = scrollY;
+      // Clear all fixed styles
+      document.documentElement.style.overflow = '';
+      document.body.style.position = '';
+      document.body.style.top = '';
+      document.body.style.left = '';
+      document.body.style.right = '';
+      document.body.style.width = '';
+      scrollLocked = false;
+      // Restore scroll position
+      window.scrollTo(0, y);
+    }
+
+    // Prevent touch scroll bleed on background/overlay (mobile)
+    document.addEventListener('touchmove', (e) => {
+      if (!menu.classList.contains('open')) return;
+      // Allow scrolling inside the menu
+      if (e.target.closest('#mobileMenu')) return;
+      // Prevent all other scrolling
+      e.preventDefault();
+    }, { passive: false });
+
+    // Prevent wheel scroll bleed on background/overlay (desktop trackpads)
+    document.addEventListener('wheel', (e) => {
+      if (!menu.classList.contains('open')) return;
+      // Allow scrolling inside the menu
+      if (e.target.closest('#mobileMenu')) return;
+      // Prevent all other scrolling
+      e.preventDefault();
+    }, { passive: false });
   }
   if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
 })();
