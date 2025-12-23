@@ -19,17 +19,17 @@
   @page { size: A4; margin: 10mm; }
 
   /* Remove backgrounds/shadows that waste ink and space */
-  body.order-page, .order-details-container, .user-details-form {
+  body.order-page, .order-page .order-details-container, .order-page .user-details-form {
     background: #ffffff !important;
     box-shadow: none !important;
     color: #000 !important;
   }
 
   /* Hide site chrome while printing */
-  .header, .footer, .menu-toggle, .mobile-overlay { display: none !important; }
+  .order-page .header, .order-page .footer, .order-page .menu-toggle, .order-page .mobile-overlay { display: none !important; }
 
   /* Compact type scale for print */
-  body { font-size: 12px; line-height: 1.35; }
+  body.order-page { font-size: 12px; line-height: 1.35; }
   .order-header h1 { font-size: 1.2rem; }
   .car-info h3 { font-size: 1rem; }
   .info-section h3 { font-size: .95rem; }
@@ -214,7 +214,7 @@
   opacity: 1;
 }
 
-.view-details-btn {
+.order-page .view-details-btn {
   background: linear-gradient(135deg, #ffd23f, #ff6b35);
   color: #1a1a1a;
   border: none;
@@ -228,7 +228,7 @@
   transition: transform 0.3s ease;
 }
 
-.view-details-btn:hover {
+.order-page .view-details-btn:hover {
   transform: scale(1.05);
 }
 
@@ -406,7 +406,7 @@
   border-top: 1px solid rgba(255, 210, 63, 0.2);
 }
 
-.action-btn {
+.order-page .order-actions .action-btn {
   padding: 1rem 2rem;
   border: none;
   border-radius: 25px;
@@ -422,24 +422,24 @@
   justify-content: center;
 }
 
-.action-btn.primary {
+.order-page .order-actions .action-btn.primary {
   background: linear-gradient(135deg, #ffd23f, #ff6b35);
   color: #1a1a1a;
   box-shadow: 0 5px 20px rgba(255, 210, 63, 0.3);
 }
 
-.action-btn.primary:hover {
+.order-page .order-actions .action-btn.primary:hover {
   transform: translateY(-2px);
   box-shadow: 0 8px 25px rgba(255, 210, 63, 0.4);
 }
 
-.action-btn.secondary {
+.order-page .order-actions .action-btn.secondary {
   background: transparent;
   color: #ffd23f;
   border: 2px solid #ffd23f;
 }
 
-.action-btn.secondary:hover {
+.order-page .order-actions .action-btn.secondary:hover {
   background: #ffd23f;
   color: #1a1a1a;
   transform: translateY(-2px);
@@ -492,7 +492,7 @@
     align-items: center;
   }
   
-  .action-btn {
+  .order-page .order-actions .action-btn {
     width: 100%;
     max-width: 300px;
   }
@@ -616,14 +616,14 @@
   }
   
   /* Mobile text size for all inputs */
-  input,
-  textarea {
+  .order-page .user-details-form input,
+  .order-page .user-details-form textarea {
     font-size: 0.8rem;
   }
   
   /* Mobile placeholder text for all inputs */
-  input::placeholder,
-  textarea::placeholder {
+  .order-page .user-details-form input::placeholder,
+  .order-page .user-details-form textarea::placeholder {
     font-size: 0.7rem !important;
   }
 }

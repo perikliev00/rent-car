@@ -14,6 +14,25 @@
   font-family: 'Inter', 'Poppins', sans-serif;
 }
 
+/* Align search results grid with new Home layout */
+.search-results-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+@media (min-width: 900px) {
+  .search-results-wrapper {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
+
+.search-results-main {
+  flex: 1;
+  min-width: 0;
+}
+
 /* card */
 .card.car-card{
   box-sizing:border-box; /* keep border inside the declared 280 px */
