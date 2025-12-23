@@ -17,7 +17,7 @@
 
   <h2><%= title %></h2>
 
-  <form class="filter-form" action="/postSearchCars" method="post">
+  <form id="homeSearchForm" class="filter-form" action="/postSearchCars" method="post">
     <input type="hidden" name="_csrf" value="<%= csrfToken || '' %>">
     <!-- ── Locations Pair ─────────────────────────── -->
     <div class="form-row-pair location-pair">

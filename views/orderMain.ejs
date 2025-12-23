@@ -4,13 +4,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><%= title %></title>
-    <link rel="stylesheet" href="/css/styles.css">
-    <link rel="stylesheet" href="/css/tw.build.css">
+    <link rel="stylesheet" href="/css/tw.build.css">            <!-- Tailwind first -->
+    <link rel="stylesheet" href="/css/styles.css">              <!-- global base -->
     <link rel="stylesheet" href="/css/responsiveStyles.css">
     <link rel="stylesheet" href="/css/footer.css">
     <link rel="stylesheet" href="/css/validation.css">
-    <link rel="stylesheet" href="/css/orderPage.css">
     <link rel="stylesheet" href="/css/animatedBackground.css">
+    <link rel="stylesheet" href="/css/orderPage.css">           <!-- page-specific last -->
     <link rel="preload" as="image" href="/images/sports-car-orders.jpg">
 
      <link
@@ -49,7 +49,7 @@
               <% } %>.
               Please finish or release it before starting another booking.
             </p>
-            <form action="/reservations/release" method="POST" style="margin-top:0.5rem;">
+            <form id="release-reservation-form" action="/reservations/release" method="POST" style="margin-top:0.5rem;" data-release-endpoint="/reservations/release">
               <input type="hidden" name="_csrf" value="<%= csrfToken || '' %>">
               <% if (typeof releaseRedirect !== 'undefined' && releaseRedirect) { %>
                 <input type="hidden" name="redirect" value="<%= releaseRedirect %>">

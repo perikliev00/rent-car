@@ -51,6 +51,25 @@ router.post(
   '/admin/cars/new',
   requireAdmin,
   upload.single('image'),
+  // Handle multer errors (e.g., file size limit)
+  (err, req, res, next) => {
+    if (err && err.name === 'MulterError') {
+      if (err.code === 'LIMIT_FILE_SIZE') {
+        req.fileValidationError = 'File size exceeds 5MB limit';
+      } else {
+        req.fileValidationError = err.message || 'File upload error';
+      }
+      return next();
+    }
+    next(err);
+  },
+  // Check for file validation errors after multer processes the file
+  (req, res, next) => {
+    if (req.fileRejected) {
+      req.fileValidationError = 'Only image files are allowed (JPG, JPEG, PNG, WEBP)';
+    }
+    next();
+  },
   csrfProtection,
   setCsrfToken,
   [
@@ -61,6 +80,20 @@ router.post(
     body('priceTier_1_3').optional({ checkFalsy: true }).toFloat().isFloat({ gt: 0 }).withMessage('Tier 1–3 must be a number greater than 0'),
     body('priceTier_7_31').optional({ checkFalsy: true }).toFloat().isFloat({ gt: 0 }).withMessage('Tier 7–31 must be a number greater than 0'),
     body('priceTier_31_plus').optional({ checkFalsy: true }).toFloat().isFloat({ gt: 0 }).withMessage('Tier 31+ must be a number greater than 0'),
+    // Require at least one price tier
+    body().custom((value, { req }) => {
+      const tier1 = parseFloat(req.body.priceTier_1_3);
+      const tier2 = parseFloat(req.body.priceTier_7_31);
+      const tier3 = parseFloat(req.body.priceTier_31_plus);
+      const hasValidTier = 
+        (Number.isFinite(tier1) && tier1 > 0) ||
+        (Number.isFinite(tier2) && tier2 > 0) ||
+        (Number.isFinite(tier3) && tier3 > 0);
+      if (!hasValidTier) {
+        throw new Error('At least one price tier (1–3 days, 7–31 days, or 31+ days) is required');
+      }
+      return true;
+    }).withMessage('At least one price tier is required'),
   ],
   adminController.postCreateCar
 );
@@ -69,6 +102,25 @@ router.post(
   '/admin/cars/:id/edit',
   requireAdmin,
   upload.single('image'),
+  // Handle multer errors (e.g., file size limit)
+  (err, req, res, next) => {
+    if (err && err.name === 'MulterError') {
+      if (err.code === 'LIMIT_FILE_SIZE') {
+        req.fileValidationError = 'File size exceeds 5MB limit';
+      } else {
+        req.fileValidationError = err.message || 'File upload error';
+      }
+      return next();
+    }
+    next(err);
+  },
+  // Check for file validation errors after multer processes the file
+  (req, res, next) => {
+    if (req.fileRejected) {
+      req.fileValidationError = 'Only image files are allowed (JPG, JPEG, PNG, WEBP)';
+    }
+    next();
+  },
   csrfProtection,
   setCsrfToken,
   [
@@ -79,6 +131,20 @@ router.post(
     body('priceTier_1_3').optional({ checkFalsy: true }).toFloat().isFloat({ gt: 0 }).withMessage('Tier 1–3 must be a number greater than 0'),
     body('priceTier_7_31').optional({ checkFalsy: true }).toFloat().isFloat({ gt: 0 }).withMessage('Tier 7–31 must be a number greater than 0'),
     body('priceTier_31_plus').optional({ checkFalsy: true }).toFloat().isFloat({ gt: 0 }).withMessage('Tier 31+ must be a number greater than 0'),
+    // Require at least one price tier (same as create route)
+    body().custom((value, { req }) => {
+      const tier1 = parseFloat(req.body.priceTier_1_3);
+      const tier2 = parseFloat(req.body.priceTier_7_31);
+      const tier3 = parseFloat(req.body.priceTier_31_plus);
+      const hasValidTier = 
+        (Number.isFinite(tier1) && tier1 > 0) ||
+        (Number.isFinite(tier2) && tier2 > 0) ||
+        (Number.isFinite(tier3) && tier3 > 0);
+      if (!hasValidTier) {
+        throw new Error('At least one price tier (1–3 days, 7–31 days, or 31+ days) is required');
+      }
+      return true;
+    }).withMessage('At least one price tier is required'),
   ],
   adminController.postEditCar
 );

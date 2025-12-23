@@ -10,8 +10,8 @@
 <body>
     <%- include('../partials/header') %>
     <section class="filter-section" style="border-bottom:none; padding-top: 4rem;">
-        <h2 style="margin-bottom: 1rem;"><%= car ? 'Edit Car' : 'Add Car' %></h2>
-        <form action="<%= car ? '/admin/cars/' + car._id + '/edit' : '/admin/cars/new' %>" method="POST" enctype="multipart/form-data" class="filter-form" style="max-width: 720px; position:relative;">
+        <h2 style="margin-bottom: 1rem;"><%= title || (car && car._id ? 'Edit Car' : 'Add Car') %></h2>
+        <form action="<%= car && car._id ? '/admin/cars/' + car._id + '/edit' : '/admin/cars/new' %>" method="POST" enctype="multipart/form-data" class="filter-form" style="max-width: 720px; position:relative;">
             <input type="hidden" name="_csrf" value="<%= csrfToken || '' %>">
             <% if (typeof errors !== 'undefined' && errors.length) { %>
                 <div class="validation-banner-container">

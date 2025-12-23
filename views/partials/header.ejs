@@ -6,7 +6,22 @@
   referrerpolicy="no-referrer"
 />
 <div class="header-announcement">Book with confidence — flexible returns available.</div>
-<header class="header">
+<style>
+  /* Header-only guard to resist page-level overrides */
+  header.header nav a,
+  header.header .nav a,
+  header.header a.nav-link,
+  header.header .nav button {
+    font-size: 0.875rem;
+    line-height: 1.25rem;
+    padding: 0.5rem 0.75rem;
+    font-weight: 500;
+    white-space: nowrap;
+  }
+
+  header.header .right-actions { flex-shrink: 0; }
+</style>
+<header class="header flex items-center justify-between gap-4 flex-wrap md:flex-nowrap">
     <a class="logo flex items-center gap-2" href="/">
         <svg class="icon icon-md" aria-hidden="true"><use href="/images/icons.svg#icon-car"></use></svg>
         <span>LuxRide</span>
@@ -138,7 +153,7 @@
             <% } %>
         </ul>
     </nav>
-    <div class="header-actions">
+    <div class="header-actions right-actions shrink-0 flex items-center gap-4 text-sm md:text-base font-medium">
         <a href="/support/visit" class="action-btn" aria-label="Visit"><svg class="icon icon-md" aria-hidden="true"><use href="/images/icons.svg#icon-store"></use></svg><span>Visit</span></a>
         <a href="/contacts" class="action-btn" aria-label="Support"><svg class="icon icon-md" aria-hidden="true"><use href="/images/icons.svg#icon-help"></use></svg><span>Help</span></a>
         <% if (typeof isLoggedIn !== 'undefined' && isLoggedIn) { %>
