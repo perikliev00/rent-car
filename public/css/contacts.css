@@ -1,10 +1,7 @@
 /* Contacts page specific styles */
 .contacts-page {
-  background-color: #050505; /* dark fallback while hero image loads */
-  background: linear-gradient(rgba(17, 17, 17, 0.4), rgba(17, 17, 17, 0.4)), 
-              url('/images/g-class-contact.jpg');
-  background-size: cover;
-  background-position: center center;
+  background-color: #0b0b0b;
+  background: var(--site-bg);
   background-attachment: fixed;
   background-repeat: no-repeat;
   color: #ffffff;
@@ -86,6 +83,9 @@
   animation: pulse 6s ease-in-out infinite;
   z-index: 0;
 }
+
+/* Make Contacts hero background match the rest of the page */
+.contacts-hero::before { display: none !important; }
 
 .contacts-hero .container {
   position: relative;

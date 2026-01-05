@@ -1,10 +1,7 @@
 /* Dark themed order page aligned with other pages */
 .order-page{
-  background-color: #050505; /* dark fallback while hero image loads */
-  background: linear-gradient(rgba(17, 17, 17, 0.4), rgba(17, 17, 17, 0.4)), 
-              url('/images/sports-car-orders.jpg');
-  background-size: cover;
-  background-position: center center;
+  background-color: #0b0b0b;
+  background: var(--site-bg);
   background-attachment: fixed;
   background-repeat: no-repeat;
   color: #ffffff;
