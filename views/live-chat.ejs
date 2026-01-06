@@ -47,41 +47,12 @@
                             </div>
                         </div>
                         
-                        <div class="chat-messages" id="chatMessages">
-                            <div class="message agent-message">
-                                <div class="message-content">
-                                    <p>Hello! I'm Alex from Rent A Car. How can I help you today?</p>
-                                    <span class="message-time">Just now</span>
-                                </div>
-                            </div>
-                            
-                            <div class="quick-replies">
-                                <p>Quick options:</p>
-                                <button class="quick-reply" onclick="sendQuickReply('I want to rent a car')">
-                                    <i class="fas fa-car"></i> Rent a Car
-                                </button>
-                                <button class="quick-reply" onclick="sendQuickReply('Check my booking')">
-                                    <i class="fas fa-calendar"></i> Check Booking
-                                </button>
-                                <button class="quick-reply" onclick="sendQuickReply('Pricing information')">
-                                    <i class="fas fa-dollar-sign"></i> Pricing Info
-                                </button>
-                                <button class="quick-reply" onclick="sendQuickReply('Vehicle specifications')">
-                                    <i class="fas fa-cog"></i> Vehicle Specs
-                                </button>
-                            </div>
+                        <div class="chat-messages" id="chatMessages" aria-live="polite" aria-atomic="false">
+                            <!-- Messages will be dynamically added here -->
                         </div>
                         
-                        <div class="chat-input">
-                            <div class="input-container">
-                                <button class="attachment-btn">
-                                    <i class="fas fa-paperclip"></i>
-                                </button>
-                                <input type="text" id="messageInput" placeholder="Type your message..." onkeypress="handleEnter(event)">
-                                <button class="send-btn" onclick="sendMessage()">
-                                    <i class="fas fa-paper-plane"></i>
-                                </button>
-                            </div>
+                        <div class="chat-choices" id="chatChoices" role="group" aria-label="Available options">
+                            <!-- Choice buttons will be dynamically rendered here -->
                         </div>
                     </div>
                 </div>
@@ -144,7 +115,7 @@
                         <a href="/support/phone" class="action-btn">
                             <i class="fas fa-phone"></i> Call Us
                         </a>
-                        <a href="/support/email" class="action-btn">
+                        <a href="/contacts" class="action-btn">
                             <i class="fas fa-envelope"></i> Send Email
                         </a>
                         <a href="/support/visit" class="action-btn">
