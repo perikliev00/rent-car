@@ -350,6 +350,98 @@ exports.releaseActiveReservation = async (req, res) => {
   }
 };
 
+exports.releaseAndReholdReservation = async (req, res) => {
+  const {
+    carId,
+    pickupDate,
+    returnDate,
+    pickupTime,
+    returnTime,
+    pickupLocation,
+    returnLocation,
+  } = req.body || {};
+
+  try {
+    const car = await Car.findById(carId);
+    if (!car) {
+      return res.status(404).json({ ok: false, message: 'Car not found' });
+    }
+
+    const normalizedPickupTime = pickupTime || '00:00';
+    const normalizedReturnTime = returnTime || '23:59';
+
+    const {
+      isValid,
+      errors: bookingErrors,
+      startDate,
+      endDate,
+    } = validateBookingDates({
+      pickupDate,
+      returnDate,
+      pickupTime: normalizedPickupTime,
+      returnTime: normalizedReturnTime,
+    });
+
+    if (!isValid || !startDate || !endDate) {
+      return res.status(422).json({
+        ok: false,
+        message: bookingErrors[0] || 'Invalid booking dates',
+      });
+    }
+
+    const pricing = computeBookingPrice(
+      car,
+      startDate,
+      endDate,
+      pickupLocation,
+      returnLocation
+    );
+    if (!pricing || !Number.isFinite(pricing.totalPrice) || pricing.totalPrice <= 0) {
+      return res.status(422).json({ ok: false, message: 'Unable to calculate price' });
+    }
+
+    // 1) Release any currently active reservation for this session (ignore if none).
+    await releaseActiveReservationForSession(req);
+
+    // 2) Check availability AFTER releasing.
+    const { overlappingReservation, bookedOverlap } =
+      await checkCarAvailabilityForRange({
+        carId: car._id,
+        startDate,
+        endDate,
+        now: new Date(),
+      });
+
+    if (overlappingReservation || bookedOverlap) {
+      return res.status(409).json({
+        ok: false,
+        message: 'Selected car is already reserved/booked in this period.',
+      });
+    }
+
+    // 3) Create a brand-new pending reservation for the current page values.
+    await createPendingReservation({
+      carId: car._id,
+      sessionId: getSessionId(req),
+      startDate,
+      endDate,
+      pickupTime: normalizedPickupTime,
+      returnTime: normalizedReturnTime,
+      pickupLocation,
+      returnLocation,
+      pricing,
+    });
+
+    return res.status(200).json({ ok: true, reheld: true });
+  } catch (err) {
+    console.error('releaseAndReholdReservation error:', err);
+    return res.status(500).json({
+      ok: false,
+      message: 'Failed to release and re-hold reservation.',
+    });
+  }
+};
+
 exports.handleStripeWebhook = async (req, res) => {
   const logPrefix = '🌐 [StripeWebhook]';
   console.log('════════════════════════════════════════════════════');

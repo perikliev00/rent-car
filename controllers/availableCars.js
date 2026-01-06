@@ -57,7 +57,18 @@ exports.postSearchCars = async (req, res, next) => {
   }
 
   if (!errors.isEmpty()) {
-    const cars = await Car.find();
+    // Calculate pagination (same as homeController.js)
+    const page = Math.max(1, parseInt(req.body.page || req.query.page || '1', 10));
+    const perPage = 3; // Same as home page
+
+    const allCars = await Car.find();
+    const totalCars = allCars.length;
+    const totalPages = Math.max(1, Math.ceil(totalCars / perPage));
+
+    // Get cars for current page
+    const startIdx = (page - 1) * perPage;
+    const cars = allCars.slice(startIdx, startIdx + perPage);
+
     const tomorrow = new Date(today);
     tomorrow.setDate(today.getDate() + 1);
     const pickupDateISO =
@@ -79,6 +90,18 @@ exports.postSearchCars = async (req, res, next) => {
       returnTime: returnTimeInput,
       pickupLocation: req.body['pickup-location'],
       returnLocation: req.body['return-location'],
+      // Add pagination data
+      currentPage: page,
+      totalPages: totalPages,
+      category: '', // No category filter on error
+      filters: {
+        transmission: '',
+        fuelType: '',
+        seatsMin: '',
+        seatsMax: '',
+        priceMin: '',
+        priceMax: '',
+      }
     });
   }
   

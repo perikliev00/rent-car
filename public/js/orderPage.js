@@ -398,6 +398,7 @@ document.addEventListener('DOMContentLoaded', function () {
     const btn = releaseForm.querySelector('button[type="submit"]');
     const csrf = releaseForm.querySelector('input[name="_csrf"]')?.value || '';
     const endpoint = releaseForm.getAttribute('data-release-endpoint') || '/reservations/release';
+    const orderForm = document.querySelector('.user-details-form');
 
     // small loading state
     const oldText = btn.textContent;
@@ -408,6 +409,24 @@ document.addEventListener('DOMContentLoaded', function () {
       const body = new URLSearchParams();
       body.set('_csrf', csrf);
 
+      // Include current page values so the server can immediately re-hold the same reservation.
+      if (orderForm) {
+        const fieldNames = [
+          'carId',
+          'pickupDate',
+          'pickupTime',
+          'returnDate',
+          'returnTime',
+          'pickupLocation',
+          'returnLocation',
+        ];
+
+        fieldNames.forEach((name) => {
+          const value = orderForm.querySelector(`[name="${name}"]`)?.value || '';
+          body.set(name, value);
+        });
+      }
+
       const resp = await fetch(endpoint, {
         method: 'POST',
         headers: {
@@ -417,25 +436,45 @@ document.addEventListener('DOMContentLoaded', function () {
         body: body.toString()
       });
 
-      if (!resp.ok) {
-        // fallback: if server doesn’t return JSON, just try a soft reload
-        console.warn('Release reservation: non-OK response', resp.status);
+      let data = null;
+      const contentType = resp.headers.get('content-type') || '';
+      if (contentType.includes('application/json')) {
+        data = await resp.json();
       }
 
-      // On success just remove the banner so the UI reflects server state
+      if (!resp.ok || !data || typeof data.ok !== 'boolean') {
+        const message =
+          (data && data.message) ||
+          (data && data.error) ||
+          'Failed to release and re-hold reservation. Please try again.';
+
+        console.warn('Release-and-rehold: non-OK or invalid JSON response', resp.status, data);
+        if (typeof showNotification === 'function') {
+          showNotification(message, 'error');
+        }
+        return;
+      }
+
+      if (!data.ok) {
+        if (typeof showNotification === 'function') {
+          showNotification(data.message || 'Failed to release and re-hold reservation.', 'error');
+        }
+        return;
+      }
+
+      // Success: remove banner + enable form so the user can proceed.
       const banner = document.querySelector('.existing-reservation-banner');
       if (banner) banner.remove();
       clearValidationErrors();
       reenableOrderForm();
 
-      // Optional: toast
       if (typeof showNotification === 'function') {
-        showNotification('Reservation released. You can proceed.', 'success');
+        showNotification('Reservation updated. You can proceed.', 'success');
       }
     } catch (err) {
       console.error('Release reservation AJAX error:', err);
       if (typeof showNotification === 'function') {
-        showNotification('Failed to release reservation. Please try again.', 'error');
+        showNotification('Failed to release and re-hold reservation. Please try again.', 'error');
       }
     } finally {
       btn.disabled = false;
