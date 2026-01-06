@@ -11,7 +11,8 @@
     .header { display:flex; align-items:center; justify-content:space-between; gap:1rem; margin-bottom:1rem; }
     .title { color:#ffd23f; margin:0; }
     .back { color:#ffd23f; text-decoration:none; }
-    .grid { display:grid; grid-template-columns: 380px 1fr; gap:1.25rem; }
+    /* Improve shrink behavior even on mid sizes */
+    .grid { display:grid; grid-template-columns: minmax(0, 380px) minmax(0, 1fr); gap:1.25rem; }
     .car-card { overflow:hidden; border-radius:10px; border:1px solid #333; background:#0a0a0a; }
     .car-card img { display:block; width:100%; height:260px; object-fit:cover; }
     .car-info { padding:.75rem 1rem; color:#fff; }
@@ -26,6 +27,24 @@
     .btn-admin { padding: 0.5rem 1rem; border: 1px solid #ffd23f; border-radius: 6px; background: transparent; color: #ffd23f; cursor: pointer; font-size: 0.9rem; text-decoration:none; }
     .btn-edit { border-color:#3b82f6; color:#3b82f6; }
     .btn-delete { border-color:#ef4444; color:#ef4444; }
+
+    /* Allow content to wrap instead of forcing overflow */
+    .section, .value, .car-info { min-width: 0; }
+    .value { overflow-wrap: anywhere; word-break: break-word; }
+
+    /* Responsive: stack to 1 column on small screens */
+    @media (max-width: 900px) {
+      .order-view { margin: 1rem; padding: 1rem; }
+      .header { flex-direction: column; align-items: flex-start; }
+      .grid { grid-template-columns: 1fr; }
+      .car-card img { height: 220px; }
+    }
+
+    /* Extra small screens: make rows vertical so labels don’t steal width */
+    @media (max-width: 480px) {
+      .row { grid-template-columns: 1fr; gap: 0.25rem; }
+      .label { font-size: 0.85rem; }
+    }
   </style>
   <% function formatDate(dateString){ if(!dateString) return ''; const d=new Date(dateString); if(isNaN(d)) return dateString; const m=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']; return d.getDate()+" "+m[d.getMonth()]+" "+d.getFullYear(); } %>
   <% function formatLocation(loc){ if(!loc) return ''; return loc.split('-').map(w=>w.charAt(0).toUpperCase()+w.slice(1).toLowerCase()).join(' ');} %>

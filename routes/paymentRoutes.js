@@ -27,6 +27,11 @@ router.post(
 );
 
 router.post('/reservations/release', csrfProtection, paymentController.releaseActiveReservation);
+router.post(
+  '/reservations/release-and-rehold',
+  csrfProtection,
+  paymentController.releaseAndReholdReservation
+);
 router.get('/success', paymentController.handleCheckoutSuccess);
 router.get('/cancel', paymentController.handleCheckoutCancel);
 

@@ -65,22 +65,23 @@
       <div class="form-row pickup-date">
         <label for="pickup-date">Pick-Up Date</label>
         <input
-          type="date"
+          type="text"
           id="pickup-date"
           name="pickup-date"
           value="<%= pickupDateISO || pickupDate || '' %>"
-          min="<%= pickupDateISO || pickupDate || '' %>"
-          onfocus="this.showPicker && this.showPicker()"
-          onclick="this.showPicker && this.showPicker()">
+          placeholder="Select date"
+          readonly>
       </div>
 
       <div class="form-row return-date">
         <label for="return-date">Return Date</label>
-        <input  type="date" id="return-date" name="return-date"
-                value="<%= returnDateISO || returnDate || '' %>"
-                min="<%= pickupDateISO || pickupDate || '' %>"
-                onfocus="this.showPicker && this.showPicker()"
-                onclick="this.showPicker && this.showPicker()">
+        <input
+          type="text"
+          id="return-date"
+          name="return-date"
+          value="<%= returnDateISO || returnDate || '' %>"
+          placeholder="Select date"
+          readonly>
       </div>
     </div>
 
