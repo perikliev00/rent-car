@@ -639,6 +639,8 @@ input, select, textarea {
     margin-bottom: 10px;
     animation: fadeInUp 0.85s 0.3s both;
     transition: var(--transition);
+    overflow: visible !important; /* Prevent clipping of dropdown menus */
+    z-index: auto; /* Don't create competing stacking context */
 }
 
 .filter-form:hover {
@@ -654,6 +656,8 @@ input, select, textarea {
     opacity: 0;
     animation: fadeInUp 0.8s forwards;
     animation-delay: 0.3s;
+    position: relative; /* Allow absolute positioning of children */
+    z-index: auto; /* Don't create competing stacking context */
 }
 .form-row label {
     margin-bottom: 0.33rem;
@@ -702,6 +706,295 @@ input, select, textarea {
 /* Remove the select default arrow background */
 .form-row select {
     background-image: none;
+}
+
+/* -------------------------------------------------
+   Custom Dropdown Component Styles
+--------------------------------------------------*/
+.custom-dropdown {
+    position: relative;
+    width: 100%;
+    isolation: isolate; /* Create new stacking context */
+    z-index: 1; /* Base z-index when closed */
+}
+
+.custom-dropdown-toggle {
+    width: 100%;
+    padding: .8rem 1rem;
+    padding-right: 2.5rem;
+    border: 2px solid var(--primary-color);
+    border-radius: 9px;
+    background: var(--background-light);
+    color: var(--text-primary);
+    font-size: 1rem;
+    font-weight: 600;
+    box-shadow: 0 2px 12px var(--shadow-primary);
+    transition: var(--transition);
+    outline: none;
+    margin-bottom: 0.18rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    text-align: left;
+    position: relative;
+    opacity: 1;
+    animation: fadeInUp 0.9s 0.4s both;
+}
+
+.custom-dropdown-toggle:hover {
+    border-color: var(--secondary-color);
+    background: var(--background-medium);
+    box-shadow: 0 0 0 3px var(--shadow-primary);
+    color: var(--text-primary);
+}
+
+.custom-dropdown-toggle:focus,
+.custom-dropdown-toggle:focus-visible {
+    border-color: var(--secondary-color);
+    background: var(--background-medium);
+    box-shadow: 0 0 0 3px var(--shadow-primary);
+    color: var(--text-primary);
+    outline: none;
+}
+
+.custom-dropdown-toggle.active {
+    border-color: var(--secondary-color);
+    background: var(--background-medium);
+    box-shadow: 0 0 0 3px var(--shadow-primary), 0 4px 20px rgba(255, 210, 63, 0.3);
+}
+
+.custom-dropdown-selected {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.custom-dropdown-arrow {
+    position: absolute;
+    right: 1rem;
+    top: 50%;
+    transform: translateY(-50%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 12px;
+    height: 12px;
+    color: var(--primary-color);
+    transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    pointer-events: none;
+    flex-shrink: 0;
+}
+
+.custom-dropdown-arrow svg {
+    width: 100%;
+    height: 100%;
+    stroke: currentColor;
+}
+
+.custom-dropdown.open .custom-dropdown-arrow {
+    transform: translateY(-50%) rotate(180deg);
+}
+
+.custom-dropdown-menu {
+    position: absolute; /* Default: absolute positioning */
+    top: calc(100% + 4px);
+    left: 0;
+    right: 0;
+    z-index: 99999 !important; /* Maximum z-index to appear above all elements */
+    background: var(--background-medium);
+    border: 2px solid var(--primary-color);
+    border-radius: 9px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4),
+                0 0 0 1px rgba(255, 210, 63, 0.2),
+                0 4px 20px var(--shadow-primary);
+    backdrop-filter: blur(10px);
+    max-height: 300px;
+    overflow-y: auto;
+    overflow-x: hidden;
+    margin: 0;
+    padding: 0.5rem 0;
+    list-style: none;
+    opacity: 0;
+    transform: translateY(-10px) scale(0.95);
+    transition: opacity 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275),
+                transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    pointer-events: none;
+}
+
+.custom-dropdown-menu[hidden] {
+    display: none;
+}
+
+.custom-dropdown.open .custom-dropdown-menu {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    pointer-events: auto;
+}
+
+/* When the menu is portaled to <body>, it won't be inside `.custom-dropdown.open`.
+   Use `.is-open` to enable the visible state. */
+.custom-dropdown-menu.is-open {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    pointer-events: auto;
+}
+
+/* Custom scrollbar for dropdown menu */
+.custom-dropdown-menu::-webkit-scrollbar {
+    width: 8px;
+}
+
+.custom-dropdown-menu::-webkit-scrollbar-track {
+    background: var(--background-dark);
+    border-radius: 4px;
+}
+
+.custom-dropdown-menu::-webkit-scrollbar-thumb {
+    background: var(--primary-color);
+    border-radius: 4px;
+    opacity: 0.6;
+}
+
+.custom-dropdown-menu::-webkit-scrollbar-thumb:hover {
+    opacity: 1;
+}
+
+.custom-dropdown-option {
+    padding: 0.75rem 1rem;
+    color: var(--text-primary);
+    font-size: 1rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: var(--transition-fast);
+    position: relative;
+    display: flex;
+    align-items: center;
+    min-height: 44px; /* Touch target size for mobile */
+    user-select: none;
+}
+
+.custom-dropdown-option:hover:not(.disabled) {
+    background: rgba(255, 210, 63, 0.15);
+    color: var(--primary-color);
+}
+
+.custom-dropdown-option.highlighted:not(.disabled) {
+    background: rgba(255, 210, 63, 0.2);
+    color: var(--primary-color);
+}
+
+.custom-dropdown-option.selected {
+    background: rgba(255, 210, 63, 0.1);
+    color: var(--primary-color);
+    font-weight: 700;
+    border-left: 3px solid var(--primary-color);
+}
+
+.custom-dropdown-option.selected::before {
+    content: '✓';
+    position: absolute;
+    right: 1rem;
+    color: var(--primary-color);
+    font-weight: 800;
+}
+
+.custom-dropdown-option.disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    color: var(--text-muted);
+}
+
+.custom-dropdown-original {
+    display: none !important;
+}
+
+/* Mobile optimizations */
+@media (max-width: 768px) {
+    .custom-dropdown-toggle {
+        padding: 1rem 1.2rem;
+        padding-right: 3rem;
+        font-size: 1.05rem;
+        min-height: 48px;
+    }
+    
+    .custom-dropdown-menu {
+        max-height: 250px;
+        border-radius: 12px;
+    }
+    
+    .custom-dropdown-option {
+        padding: 1rem 1.2rem;
+        font-size: 1.05rem;
+        min-height: 48px;
+    }
+}
+
+/* Animation for dropdown appearance */
+@keyframes dropdownSlideDown {
+    from {
+        opacity: 0;
+        transform: translateY(-10px) scale(0.95);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+@keyframes dropdownSlideUp {
+    from {
+        opacity: 0;
+        transform: translateY(10px) scale(0.95);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+.custom-dropdown.open .custom-dropdown-menu {
+    animation: dropdownSlideDown 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+/* Portal menu: fixed overlay, very high z-index, viewport-aligned positioning (set via JS) */
+.custom-dropdown-portal-menu {
+    position: fixed !important;
+    top: 0;
+    left: 0;
+    right: auto !important;
+    z-index: 999999 !important; /* Above header/nav/overlays */
+    transform-origin: top;
+}
+
+.custom-dropdown-portal-menu.is-open {
+    animation: dropdownSlideDown 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.custom-dropdown-portal-menu.open-up {
+    transform-origin: bottom;
+}
+
+.custom-dropdown-portal-menu.is-open.open-up {
+    animation: dropdownSlideUp 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+/* Ensure dropdown appears above other content - INCREASED Z-INDEX */
+.custom-dropdown.open {
+    z-index: 99999 !important; /* Maximum z-index when open to appear above all elements */
+}
+
+/* Error state support (if form validation adds error class) */
+.form-row.error .custom-dropdown-toggle {
+    border-color: var(--secondary-color);
+    box-shadow: 0 0 0 3px var(--shadow-secondary);
+}
+
+/* Focus visible for better accessibility */
+.custom-dropdown-toggle:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
 }
 
 /* Modern Button with Fleet Effects */
@@ -1041,6 +1334,8 @@ input, select, textarea {
     gap: 1rem;
     width: 100%;
     max-width: 600px;
+    position: relative; /* Allow absolute positioning of children */
+    z-index: auto; /* Don't create competing stacking context */
 }
 
 .form-row-pair .form-row {
@@ -1404,6 +1699,15 @@ input, select, textarea {
 
 .filters-aside .filters-select {
   background-image: none;
+}
+
+/* Ensure custom dropdown works in filters-aside */
+.filters-aside .custom-dropdown {
+  width: 100%;
+}
+
+.filters-aside .custom-dropdown-toggle {
+  width: 100%;
 }
 
 .filters-aside .filters-input::placeholder {

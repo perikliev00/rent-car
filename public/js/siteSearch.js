@@ -47,10 +47,10 @@ const SITE_PAGES = [
   },
   {
     id: 'support-email',
-    title: 'Email Support',
-    url: '/support/email',
+    title: 'Contact Us',
+    url: '/contacts',
     category: 'Support',
-    keywords: ['support', 'email', 'help'],
+    keywords: ['support', 'email', 'contact', 'help'],
   },
   {
     id: 'support-chat',

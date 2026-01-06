@@ -1,4 +1,7 @@
 // Support pages controller
+const Car = require('../models/Car');
+const { FEES } = require('../utils/fees');
+
 
 // Get phone support page
 exports.getPhoneSupport = async (req, res, next) => {
@@ -9,19 +12,6 @@ exports.getPhoneSupport = async (req, res, next) => {
   } catch (err) {
     console.error('getPhoneSupport error:', err);
     err.publicMessage = 'Error loading phone support page.';
-    return next(err);
-  }
-};
-
-// Get email support page
-exports.getEmailSupport = async (req, res, next) => {
-  try {
-    res.render('email-support', {
-      title: 'Email Support - Rent A Car'
-    });
-  } catch (err) {
-    console.error('getEmailSupport error:', err);
-    err.publicMessage = 'Error loading email support page.';
     return next(err);
   }
 };
@@ -52,29 +42,123 @@ exports.getLiveChat = async (req, res, next) => {
   }
 };
 
-// Handle email support form submission
-exports.postEmailSupport = async (req, res, next) => {
+// ============================================
+// Chat API Endpoints
+// ============================================
+
+// GET /api/chat/cars-summary
+exports.getCarsSummary = async (req, res, next) => {
   try {
-    const { name, email, subject, priority, message } = req.body;
+    const cars = await Car.find({ availability: true }).lean();
     
-    // Here you would typically save to database or send email
-    console.log('Email support submission:', {
-      name,
-      email,
-      subject,
-      priority,
-      message,
-      timestamp: new Date()
+    if (!cars || cars.length === 0) {
+      return res.json({
+        totalCars: 0,
+        fuelTypes: [],
+        transmissions: [],
+        seatOptions: [],
+        priceRange: { min: 0, max: 0 },
+        priceTiers: {
+          tier1_3: { min: 0, max: 0 },
+          tier7_31: { min: 0, max: 0 },
+          tier31_plus: { min: 0, max: 0 }
+        }
+      });
+    }
+
+    // Extract unique values
+    const fuelTypes = [...new Set(cars.map(c => c.fuelType).filter(Boolean))].sort();
+    const transmissions = [...new Set(cars.map(c => c.transmission).filter(Boolean))].sort();
+    const seatOptions = [...new Set(cars.map(c => c.seats).filter(Boolean))].sort((a, b) => a - b);
+
+    // Calculate price ranges
+    const prices = cars.map(c => c.price || 0).filter(p => p > 0);
+    const tier1_3Prices = cars.map(c => c.priceTier_1_3 || c.price || 0).filter(p => p > 0);
+    const tier7_31Prices = cars.map(c => c.priceTier_7_31 || c.price || 0).filter(p => p > 0);
+    const tier31_plusPrices = cars.map(c => c.priceTier_31_plus || c.price || 0).filter(p => p > 0);
+
+    const getMinMax = (arr) => ({
+      min: arr.length > 0 ? Math.min(...arr) : 0,
+      max: arr.length > 0 ? Math.max(...arr) : 0
     });
-    
-    res.render('email-support', {
-      title: 'Email Support - Rent A Car',
-      successMessage: 'Thank you for contacting us! We will respond within our stated timeframes based on your priority level.'
+
+    res.json({
+      totalCars: cars.length,
+      fuelTypes,
+      transmissions,
+      seatOptions,
+      priceRange: getMinMax(prices),
+      priceTiers: {
+        tier1_3: getMinMax(tier1_3Prices),
+        tier7_31: getMinMax(tier7_31Prices),
+        tier31_plus: getMinMax(tier31_plusPrices)
+      }
     });
-    
   } catch (err) {
-    console.error('postEmailSupport error:', err);
-    err.publicMessage = 'There was an error sending your message. Please try again later.';
-    return next(err);
+    console.error('getCarsSummary error:', err);
+    return res.status(500).json({ error: 'Failed to fetch cars summary' });
+  }
+};
+
+// GET /api/chat/cars-by-filter
+exports.getCarsByFilter = async (req, res, next) => {
+  try {
+    const { fuelType, transmission, seatsMin, seatsMax } = req.query;
+    
+    const filter = { availability: true };
+    
+    if (fuelType) filter.fuelType = fuelType;
+    if (transmission) filter.transmission = transmission;
+    if (seatsMin || seatsMax) {
+      filter.seats = {};
+      if (seatsMin) filter.seats.$gte = parseInt(seatsMin);
+      if (seatsMax) filter.seats.$lte = parseInt(seatsMax);
+    }
+
+    const cars = await Car.find(filter)
+      .select('name image price priceTier_1_3 priceTier_7_31 priceTier_31_plus transmission seats fuelType _id')
+      .limit(10)
+      .lean();
+
+    res.json(cars);
+  } catch (err) {
+    console.error('getCarsByFilter error:', err);
+    return res.status(500).json({ error: 'Failed to fetch filtered cars' });
+  }
+};
+
+// GET /api/chat/pricing-info
+exports.getPricingInfo = async (req, res, next) => {
+  try {
+    res.json({
+      deliveryFees: FEES,
+      returnFees: FEES,
+      priceTierExplanation: {
+        tier1_3: '1-3 days',
+        tier7_31: '7-31 days',
+        tier31_plus: '31+ days'
+      }
+    });
+  } catch (err) {
+    console.error('getPricingInfo error:', err);
+    return res.status(500).json({ error: 'Failed to fetch pricing info' });
+  }
+};
+
+// GET /api/chat/car-details/:carId
+exports.getCarDetails = async (req, res, next) => {
+  try {
+    const { carId } = req.params;
+    
+    const car = await Car.findById(carId).lean();
+    
+    if (!car) {
+      return res.status(404).json({ error: 'Car not found' });
+    }
+
+    res.json(car);
+  } catch (err) {
+    console.error('getCarDetails error:', err);
+    return res.status(500).json({ error: 'Failed to fetch car details' });
   }
 };
