@@ -156,11 +156,7 @@
     <div class="header-actions right-actions shrink-0 flex items-center gap-4 text-sm md:text-base font-medium">
         <a href="/support/visit" class="action-btn" aria-label="Visit"><svg class="icon icon-md" aria-hidden="true"><use href="/images/icons.svg#icon-store"></use></svg><span>Visit</span></a>
         <a href="/contacts" class="action-btn" aria-label="Support"><svg class="icon icon-md" aria-hidden="true"><use href="/images/icons.svg#icon-help"></use></svg><span>Help</span></a>
-        <% if (typeof isLoggedIn !== 'undefined' && isLoggedIn) { %>
-          <a href="/logout" class="action-btn" aria-label="Logout"><svg class="icon icon-md" aria-hidden="true"><use href="/images/icons.svg#icon-user"></use></svg><span>Logout</span></a>
-        <% } else { %>
-          <a href="/login" class="action-btn" aria-label="Account"><svg class="icon icon-md" aria-hidden="true"><use href="/images/icons.svg#icon-user"></use></svg><span>Account</span></a>
-        <% } %>
+        <a href="/support/chat" class="action-btn" aria-label="Live Chat"><i class="fas fa-comments"></i><span>Chat</span></a>
     </div>
     <button class="menu-toggle" id="menuToggle" aria-label="Open menu" aria-controls="mobileMenu" aria-expanded="false">
         <svg class="icon icon-md" aria-hidden="true"><use href="/images/icons.svg#icon-menu"></use></svg>
