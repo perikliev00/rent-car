@@ -1,259 +1,213 @@
-Rent-a-Car – Session-Bound Reservations + Anti Double-Booking
+# Rent-a-Car – Session-Bound Reservations & Anti Double-Booking
 
-A full-stack rent-a-car booking demo built with Node.js/Express + MongoDB/Mongoose + EJS + Stripe Checkout.
+A full-stack **rent-a-car booking demo** built with **Node.js / Express**, **MongoDB / Mongoose**, **EJS**, and **Stripe Checkout**.
 
-The project focuses on real-world booking safety: preventing double-booking via session-bound reservation holds with automatic expiration and background cleanup.
+The project focuses on **real-world booking safety**: preventing double-booking through **session-bound reservation holds**, **automatic expiration**, and **background cleanup jobs**.
 
-Key Features
-Booking & Availability
+---
 
-Search cars by date/time and pickup/return locations
+## Key Features
 
-Availability check against:
+### Booking & Availability
+- Search cars by **date/time** and **pickup/return locations**
+- Availability is validated against:
+  - **Confirmed bookings** stored in `Car.dates` (booked date ranges)
+  - **Active reservation holds** stored in `Reservation` (`pending` / `processing`)
 
-Confirmed bookings stored in Car.dates (booked date ranges)
+### Anti Double-Booking
+- A car becomes **temporarily blocked** when another session holds it  
+  (`pending` / `processing` + `holdExpiresAt` not expired)
+- The **holding session is excluded** from the blocked list, allowing the same user session to continue checkout
 
-Active reservation holds stored in Reservation (pending/processing holds)
+---
 
-Anti double-booking:
+## Session-Bound Reservation Holds (Core)
 
-A car becomes temporarily blocked when another session holds it (pending/processing + holdExpiresAt not expired)
+- Every reservation is tied **1:1 to a server-side session** (`Reservation.sessionId`)
+- Hold window is aligned with session idle timeout  
+  (**default: 20 minutes**)
 
-The holding session is excluded from the “blocked cars” list so the same user session can continue checkout
-
-Session-Bound Reservation Holds (Core)
-
-Reservations are tied to a server-side session (Reservation.sessionId)
-
-Hold window is aligned with session idle timeout (default 20 minutes)
-
-Lifecycle:
-
+### Reservation Lifecycle
 pending → processing (Stripe session created) → confirmed (payment completed)
+↓
+expired / cancelled
 
-Holds can also become cancelled or expired
 
-Automated Cleanup (Housekeeping)
+- Holds automatically expire if the session ends or becomes inactive
 
-Background jobs run every 3 minutes:
+---
 
-Cleans outdated Car.dates entries (removes past date ranges)
+## Automated Cleanup (Housekeeping)
 
-Marks reservations as expired if:
+Background jobs run every **3 minutes**:
 
-holdExpiresAt passed, or
+- Remove outdated entries from `Car.dates`
+- Mark reservations as `expired` when:
+  - `holdExpiresAt` has passed
+  - `sessionId` is missing
+  - the referenced session no longer exists or is expired
 
-reservation has no sessionId, or
+This ensures abandoned sessions never permanently block availability.
 
-the referenced session no longer exists / is expired in the sessions collection
+---
 
-Payments (Stripe Checkout)
+## Payments (Stripe Checkout)
 
-Stripe Checkout session is created server-side
+- Stripe Checkout session is created **server-side**
+- Reservation status transitions to `processing`
+- Reservation is linked to `stripeSessionId`
+- Webhook (`checkout.session.completed`) finalizes the booking:
+  - Inserts booked date range into `Car.dates`
+  - Creates an `Order` record
+  - Marks the reservation as `confirmed`
 
-Reservation is set to processing and linked to stripeSessionId
+> ⚠️ **Note:**  
+> The webhook handler trusts parsed JSON payload for demo purposes.  
+> Production usage must validate Stripe signatures using the **raw request body** and webhook secret.
 
-Webhook (demo implementation) listens for checkout.session.completed and finalizes:
+---
 
-Inserts booking range into Car.dates
+## Security & Hardening (Demo Level)
 
-Creates an Order record
+- Helmet security headers
+- Rate limiting (auth / contact / admin routes)
+- CSRF protection (`csurf`) on form submissions
+- Session storage in MongoDB with rolling idle expiration
 
-Marks reservation as confirmed
+---
 
-Note: The webhook handler currently trusts parsed JSON payload for demo purposes. In production you should validate Stripe signature using the raw request body + webhook secret.
+## Tech Stack
 
-Security & Hardening
+- **Backend:** Node.js, Express  
+- **Database:** MongoDB + Mongoose  
+- **Sessions:** express-session + connect-mongodb-session  
+- **Payments:** Stripe Checkout  
+- **Views:** EJS  
+- **Styling:** Tailwind CSS  
 
-Helmet headers
+---
 
-Rate limiting (auth/contact/admin)
+## Reservation Model (Important Fields)
 
-CSRF protection (csurf) on form routes
-
-Session storage in MongoDB (connect-mongodb-session) with rolling idle expiry
-
-Tech Stack
-
-Backend: Node.js, Express
-
-DB: MongoDB + Mongoose
-
-Sessions: express-session + connect-mongodb-session (TTL + rolling)
-
-Payments: Stripe Checkout
-
-Views: EJS
-
-Styling: Tailwind (build script included)
-
-Reservation Model (Important Fields)
-
-carId
-
-sessionId
-
-status: pending | processing | confirmed | cancelled | expired
-
-holdExpiresAt (server-side hold expiry)
-
-stripeSessionId (checkout session link)
+- `carId`
+- `sessionId`
+- `status` — `pending | processing | confirmed | cancelled | expired`
+- `holdExpiresAt`
+- `stripeSessionId`
 
 Active hold statuses:
+- `pending`
+- `processing`  
+(see `utils/reservationHelpers.js`)
 
-pending, processing (see utils/reservationHelpers.js)
+---
 
-Hold window:
+## Getting Started
 
-HOLD_WINDOW_MS = 20 minutes (matches session idle timeout)
-
-Getting Started
-1) Install
+### Installation
+```bash
 npm install
-
-2) Environment Variables
-
-Create .env in the project root:
+Environment Variables
+Create a .env file in the project root:
 
 MONGODB_URI=mongodb://localhost:27017/luxride
 SESSION_SECRET=change-me
 STRIPE_SECRET=sk_test_...
 NODE_ENV=development
 PORT=3000
-
-3) Run
+Run
 npm start
-
-
-Server will run on:
+Server runs at:
 
 http://localhost:3000
-
-4) Tailwind build (optional)
+Tailwind (optional)
 npm run dev:css
 # or
 npm run build:css
+How Anti Double-Booking Works (Short)
+Availability check
 
-How Anti Double-Booking Works (Short Explanation)
+Reject if dates overlap with confirmed bookings
 
-When a user starts checkout, the server creates or reuses a reservation hold:
+Reject if another session holds the same car (active, not expired)
 
-Check availability:
+Create or refresh reservation hold
 
-reject if Car.dates overlaps (already booked), or
+Bound to current session
 
-reject if another session holds an overlapping active reservation (pending/processing and not expired)
+Hold expiration extended on activity
 
-Create/refresh reservation hold:
+Cleanup
 
-reservation is bound to the current sessionId
+Expired sessions or holds automatically release the car
 
-hold expiry is extended on activity
-
-Housekeeping:
-
-if session expires / disappears, or hold expires, reservation becomes expired
-
-blocked cars become available again automatically
-
-This prevents two users from paying for (or holding) the same car in the same time window.
+This prevents multiple users from holding or paying for the same car simultaneously.
 
 Project Structure
+server.js — app setup, sessions, housekeeping jobs
 
-server.js – app setup + sessions + housekeeping jobs
+controllers/ — request handlers
 
-controllers/ – request handlers (search, order, payment, admin)
+services/ — booking & reservation logic
 
-services/ – business logic (reservation hold, finalization)
+models/ — Mongoose schemas
 
-models/ – Mongoose schemas (Car, Reservation, Order, etc.)
+utils/ — date, pricing, reservation helpers
 
-utils/ – pricing, date/time helpers, reservation helpers, booking sync
+routes/ — Express routes
 
-routes/ – Express routes
+views/ — EJS templates
 
-views/ – EJS templates
-
-public/ – static assets
+public/ — static assets
 
 Production Hardening (Required for Production Use)
-
-This repository represents a demo implementation. To ship this system safely into production, the following improvements are required:
+This repository represents a demo implementation.
+For production-grade usage, the following improvements are required:
 
 1) Close the micro race window (anti double-booking)
+Even with database checks, a small concurrency window exists.
 
-Even with database checks, a small concurrency window exists where two parallel requests can pass validation before state is persisted.
+Add Redis-based locking around the hold / confirm critical section
+(e.g. SET key value NX PX <ttl>)
 
-To guarantee atomicity under concurrency and across multiple app instances:
-
-Introduce Redis-based locking around the reservation hold / confirmation critical section
-(e.g. SET key value NX PX <ttl>).
-
-Use a per-resource lock key such as:
+Use per-resource lock keys:
 
 lock:car:<carId>:<from>:<to>
+Lock TTL should match the hold window
 
-
-The lock TTL should be aligned with the reservation hold window.
-
-Only the lock holder is allowed to create, refresh, or confirm a reservation.
-
-This eliminates race conditions and prevents double-booking under high load.
+Only the lock holder may create, refresh, or confirm a reservation
 
 2) Stripe webhook security
+Verify Stripe webhook signatures using the raw request body
 
-The webhook handler must verify Stripe webhook signatures using the raw request body and the webhook secret.
-
-This protects against:
-
-forged webhook events
-
-replay attacks
-
-unauthorized booking confirmations
+Prevent forged events, replay attacks, and unauthorized confirmations
 
 3) Idempotent webhook finalization
-
-Stripe webhooks can be delivered multiple times.
-
-To prevent duplicate side effects:
-
 Store stripe_event_id as unique
 
-or enforce uniqueness on stripe_session_id
+Enforce uniqueness on stripeSessionId
 
-Ignore repeated webhook events that were already processed
+Ignore already-processed events
 
-This ensures bookings and payments are finalized exactly once.
-
-4) Database transactions for critical booking steps
-
-For production reliability:
-
-Use MongoDB transactions (sessions) for critical steps such as:
+4) Database transactions
+Use MongoDB sessions for critical operations:
 
 reservation → confirmed
 
 inserting booked date ranges
 
-creating order records
+creating orders
 
-This prevents partial writes if a failure occurs mid-flow.
+5) Logging & Observability
+Add structured logs for:
 
-5) Logging & observability
+reservation creation / refresh
 
-Add structured logging and monitoring around booking state transitions:
+expiration
 
-reservation created / refreshed
+payment confirmation
 
-reservation expired
-
-payment confirmed
-
-booking finalized
-
-This is essential for debugging disputes, audits, and production incidents.
+booking finalization
 
 License
-
 MIT
