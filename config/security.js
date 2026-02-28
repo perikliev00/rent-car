@@ -12,22 +12,20 @@ function applySecurity(app, { isProd }) {
       useDefaults: true,
       directives: {
         "default-src": ["'self'"],
-        // Scripts: local + per-request nonce + Stripe + jsdelivr (if used)
+        // Scripts: local + per-request nonce + Stripe
         "script-src": [
           "'self'",
           // NOTE: res.locals.cspNonce must be set earlier by middleware
           (req, res) => `'nonce-${res.locals.cspNonce}'`,
           "https://js.stripe.com",
-          "https://m.stripe.network",
-          "https://cdn.jsdelivr.net"
+          "https://m.stripe.network"
         ],
         // Explicitly allow script elements from same sources (avoids fallback quirks)
         "script-src-elem": [
           "'self'",
           (req, res) => `'nonce-${res.locals.cspNonce}'`,
           "https://js.stripe.com",
-          "https://m.stripe.network",
-          "https://cdn.jsdelivr.net"
+          "https://m.stripe.network"
         ],
         // Disallow inline attributes like onclick
         "script-src-attr": ["'none'"],
@@ -42,7 +40,7 @@ function applySecurity(app, { isProd }) {
         // Allow posting forms to Stripe checkout
         "form-action": ["'self'", "https://checkout.stripe.com"],
         // Styles: allow inline for EJS/Tailwind + external CSS used in the project
-        "style-src": ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com", "https://cdn.jsdelivr.net", "https://cdnjs.cloudflare.com"],
+        "style-src": ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com", "https://cdnjs.cloudflare.com"],
         // Images & fonts (allow https: if some car images are off-site)
         "img-src": ["'self'", "data:", "blob:", "https:"],
         "font-src": ["'self'", "data:", "https://fonts.gstatic.com", "https://cdnjs.cloudflare.com"],

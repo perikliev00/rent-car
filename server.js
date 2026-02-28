@@ -9,7 +9,6 @@ const bodyParser = require('body-parser');
 const path = require('path');
 const session = require('express-session');
 const MongoDBStore = require('connect-mongodb-session')(session);
-const helmet = require('helmet');
 const crypto = require('crypto');
 const paymentController = require('./controllers/payment');
 const expressRaw = express.raw;
@@ -43,10 +42,6 @@ const MONGODB_URI = process.env.MONGODB_URI;
 app.use(express.static(path.join(__dirname, 'public')));
 app.use('/css',    express.static(path.join(__dirname, 'public/css')));
 app.use('/images', express.static(path.join(__dirname, 'public/images')));
-// Serve flatpickr from public first, then fallback to node_modules.
-// This prevents production breakage if public/vendor files are missing.
-app.use('/vendor/flatpickr', express.static(path.join(__dirname, 'public/vendor/flatpickr')));
-app.use('/vendor/flatpickr', express.static(path.join(__dirname, 'node_modules/flatpickr/dist')));
 app.set('view engine', 'ejs');
 
 // Body Parsers
