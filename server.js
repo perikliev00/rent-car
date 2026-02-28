@@ -43,8 +43,7 @@ const MONGODB_URI = process.env.MONGODB_URI;
 app.use(express.static(path.join(__dirname, 'public')));
 app.use('/css',    express.static(path.join(__dirname, 'public/css')));
 app.use('/images', express.static(path.join(__dirname, 'public/images')));
-// Flatpickr from node_modules – same-origin so CSP 'self' allows it on deploy
-app.use('/vendor/flatpickr', express.static(path.join(__dirname, 'node_modules/flatpickr/dist')));
+// Flatpickr is in public/vendor/flatpickr/ so it’s served by static('public') on deploy
 app.set('view engine', 'ejs');
 
 // Body Parsers
