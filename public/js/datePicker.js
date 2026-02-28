@@ -1,8 +1,13 @@
 (function initDatePickers() {
   function init() {
+    if (typeof flatpickr === 'undefined') {
+      // Script may still be loading (e.g. on slow deploy); retry once
+      setTimeout(init, 150);
+      return;
+    }
     const pickupDateEl = document.getElementById('pickup-date');
     const returnDateEl = document.getElementById('return-date');
-    
+
     if (!pickupDateEl || !returnDateEl) return;
     
     // Get today's date for validation (but allow navigation to past months)
