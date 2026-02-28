@@ -6,7 +6,7 @@
   <title><%= title %></title>
   <link rel="stylesheet" href="/css/styles.css">
   <link rel="stylesheet" href="/css/footer.css">
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+  <link rel="stylesheet" href="/vendor/flatpickr/flatpickr.css">
   <style>
     .card input, .card select {
       background:#0f0f0f;
@@ -153,7 +153,7 @@
   </datalist>
   </main>
   <%- include('../partials/footer') %>
-  <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+  <script src="/vendor/flatpickr/flatpickr.js"></script>
   <script>
     (function(){
       const q = (sel) => document.querySelector(sel);

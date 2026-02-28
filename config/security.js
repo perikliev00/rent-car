@@ -21,6 +21,14 @@ function applySecurity(app, { isProd }) {
           "https://m.stripe.network",
           "https://cdn.jsdelivr.net"
         ],
+        // Explicitly allow script elements from same sources (avoids fallback quirks)
+        "script-src-elem": [
+          "'self'",
+          (req, res) => `'nonce-${res.locals.cspNonce}'`,
+          "https://js.stripe.com",
+          "https://m.stripe.network",
+          "https://cdn.jsdelivr.net"
+        ],
         // Disallow inline attributes like onclick
         "script-src-attr": ["'none'"],
         // Stripe frames/popups

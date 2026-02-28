@@ -10,9 +10,11 @@ const path = require('path');
 const session = require('express-session');
 const MongoDBStore = require('connect-mongodb-session')(session);
 const helmet = require('helmet');
+const crypto = require('crypto');
 const paymentController = require('./controllers/payment');
 const expressRaw = express.raw;
 const { adminLimiter } = require('./middleware/rateLimit');
+const applySecurity = require('./config/security');
 
 // Routes
 const paymentRoutes = require('./routes/paymentRoutes');
@@ -41,6 +43,8 @@ const MONGODB_URI = process.env.MONGODB_URI;
 app.use(express.static(path.join(__dirname, 'public')));
 app.use('/css',    express.static(path.join(__dirname, 'public/css')));
 app.use('/images', express.static(path.join(__dirname, 'public/images')));
+// Flatpickr from node_modules – same-origin so CSP 'self' allows it on deploy
+app.use('/vendor/flatpickr', express.static(path.join(__dirname, 'node_modules/flatpickr/dist')));
 app.set('view engine', 'ejs');
 
 // Body Parsers
@@ -51,7 +55,13 @@ app.post(
 );
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(bodyParser.json());
-app.use(helmet({ contentSecurityPolicy: true }));
+
+// CSP nonce must be set before Helmet so script-src can allow nonced scripts
+app.use((req, res, next) => {
+  res.locals.cspNonce = crypto.randomBytes(16).toString('base64');
+  next();
+});
+applySecurity(app, { isProd });
 
 // ─────────────────────────────────────────────────────────────
 // Session store
