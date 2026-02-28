@@ -43,7 +43,10 @@ const MONGODB_URI = process.env.MONGODB_URI;
 app.use(express.static(path.join(__dirname, 'public')));
 app.use('/css',    express.static(path.join(__dirname, 'public/css')));
 app.use('/images', express.static(path.join(__dirname, 'public/images')));
-// Flatpickr is in public/vendor/flatpickr/ so it’s served by static('public') on deploy
+// Serve flatpickr from public first, then fallback to node_modules.
+// This prevents production breakage if public/vendor files are missing.
+app.use('/vendor/flatpickr', express.static(path.join(__dirname, 'public/vendor/flatpickr')));
+app.use('/vendor/flatpickr', express.static(path.join(__dirname, 'node_modules/flatpickr/dist')));
 app.set('view engine', 'ejs');
 
 // Body Parsers
