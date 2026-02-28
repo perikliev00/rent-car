@@ -18,45 +18,51 @@ function buildImagePath(file, fallback = '') {
 }
 
 function buildCarFormState(body = {}, existingCar = null) {
+  const car = existingCar ?? {};
+
+  // Use body value if it exists (including 0), and is not an empty string.
+  const pick = (key, fallback = '') => {
+    if (Object.prototype.hasOwnProperty.call(body, key) && body[key] !== '') {
+      return body[key];
+    }
+    if (existingCar && car[key] !== undefined) {
+      return car[key];
+    }
+    return fallback;
+  };
+
+  // Checkbox: if body has the field, it means the form was submitted.
+  // HTML checkbox sends 'on' when checked, and sends nothing when unchecked.
+  const pickAvailability = () => {
+    if (Object.prototype.hasOwnProperty.call(body, 'availability')) {
+      return body.availability === 'on';
+    }
+    if (existingCar) return !!car.availability;
+    return true;
+  };
+
+  const pickTier = (key) => {
+    if (Object.prototype.hasOwnProperty.call(body, key)) {
+      return body[key] === '' ? undefined : body[key];
+    }
+    if (existingCar && car[key] !== undefined) return car[key];
+    return undefined;
+  };
+
   const base = existingCar
-    ? {
-        _id: existingCar._id,
-        image: existingCar.image,
-        price: existingCar.price,
-      }
+    ? { _id: car._id, image: car.image, price: car.price }
     : {};
 
   return {
     ...base,
-    name: body.name || (existingCar ? existingCar.name : ''),
-    transmission:
-      body.transmission || (existingCar ? existingCar.transmission : ''),
-    seats: body.seats || (existingCar ? existingCar.seats : ''),
-    fuelType: body.fuelType || (existingCar ? existingCar.fuelType : ''),
-    availability:
-      body.availability !== undefined
-        ? body.availability === 'on'
-        : existingCar
-        ? existingCar.availability
-        : true,
-    priceTier_1_3:
-      body.priceTier_1_3 !== undefined && body.priceTier_1_3 !== ''
-        ? body.priceTier_1_3
-        : existingCar && existingCar.priceTier_1_3 !== undefined
-        ? existingCar.priceTier_1_3
-        : undefined,
-    priceTier_7_31:
-      body.priceTier_7_31 !== undefined && body.priceTier_7_31 !== ''
-        ? body.priceTier_7_31
-        : existingCar && existingCar.priceTier_7_31 !== undefined
-        ? existingCar.priceTier_7_31
-        : undefined,
-    priceTier_31_plus:
-      body.priceTier_31_plus !== undefined && body.priceTier_31_plus !== ''
-        ? body.priceTier_31_plus
-        : existingCar && existingCar.priceTier_31_plus !== undefined
-        ? existingCar.priceTier_31_plus
-        : undefined,
+    name: pick('name', ''),
+    transmission: pick('transmission', ''),
+    seats: pick('seats', ''),
+    fuelType: pick('fuelType', ''),
+    availability: pickAvailability(),
+    priceTier_1_3: pickTier('priceTier_1_3'),
+    priceTier_7_31: pickTier('priceTier_7_31'),
+    priceTier_31_plus: pickTier('priceTier_31_plus'),
   };
 }
 

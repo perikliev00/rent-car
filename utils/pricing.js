@@ -26,7 +26,7 @@ function computeDayPrice(car, rentalDays) {
 
   // Otherwise base price + discounts
 
-  return dayPrice;
+  return car.price || 0;
 }
 
 function computeBookingPrice(car, start, end, pickupLocation, returnLocation) {

@@ -7,47 +7,50 @@ const mongoose = require('mongoose');
 exports.getLogin = (req, res) => {
 	res.render('login', { title: 'Login' });
 };
-exports.postLogin = (req, res) => {
-	const errors = validationResult(req);
-	const { email, password } = req.body;
-	if (!errors.isEmpty()) {
+exports.postLogin = async (req, res, next) => {
+	try {
+	  const errors = validationResult(req);
+	  const { email, password } = req.body;
+  
+	  if (!errors.isEmpty()) {
 		return res.status(422).render('login', {
-			title: 'Login',
-			email,
-			errors: errors.array()
+		  title: 'Login',
+		  email,
+		  errors: errors.array(),
 		});
+	  }
+  
+	  const user = await User.findOne({ email });
+	  if (!user) {
+		return res.status(401).render('login', {
+		  title: 'Login',
+		  email,
+		  errors: [{ msg: 'Invalid email or password' }],
+		});
+	  }
+  
+	  const result = await bcrypt.compare(password, user.password);
+	  if (!result) {
+		return res.status(401).render('login', {
+		  title: 'Login',
+		  email,
+		  errors: [{ msg: 'Invalid email or password' }],
+		});
+	  }
+  
+	  req.session.isLoggedIn = true;
+	  req.session.user = {
+		_id: user._id,
+		email: user.email,
+		role: user.role,
+	  };
+	  return res.redirect('/');
+	} catch (err) {
+	  console.error('Login error:', err);
+	  err.publicMessage = 'Something went wrong while logging you in. Please try again.';
+	  return next(err);
 	}
-	User.findOne({email:email}).then(user => {
-		if (!user) {
-			return res.status(401).render('login', {
-				title: 'Login',
-				email,
-				errors: [{ msg: 'Invalid email or password' }]
-			});
-		}
-		bcrypt.compare(password, user.password)
-		.then(result => {
-			if (result) {
-				req.session.isLoggedIn = true;
-				req.session.user = {
-					_id: user._id,
-					email: user.email,
-					role: user.role
-				};
-				console.log(req.session.user);
-				return res.redirect('/');
-			} else {
-				return res.status(401).render('login', {
-					title: 'Login',
-					email,
-					errors: [{ msg: 'Invalid email or password' }]
-				});
-			}
-		})
-
-	});
-};
-
+  };
 exports.getSignup = (req, res) => {
 	res.render('signup', { title: 'Sign up' });
 };

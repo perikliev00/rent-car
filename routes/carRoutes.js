@@ -27,7 +27,38 @@ router.post('/postSearchCars', csrfProtection, setCsrfToken,[
 router.post('/orders', csrfProtection, setCsrfToken, orderCarController.getOrderCar);
 router.get('/about', aboutController.getAbout);
 router.get('/contacts', csrfProtection, setCsrfToken, contactController.getContacts);
-router.post('/contact', contactLimiter, csrfProtection, setCsrfToken, contactController.postContact);
+router.post(
+  '/contact',
+  contactLimiter,
+  csrfProtection,
+  setCsrfToken,
+  [
+    body('name')
+      .trim()
+      .isLength({ min: 2, max: 100 })
+      .withMessage('Please enter your full name (2–100 characters).'),
+    body('email')
+      .trim()
+      .isEmail()
+      .withMessage('Please enter a valid email address.')
+      .isLength({ max: 150 })
+      .withMessage('Email address is too long.'),
+    body('phone')
+      .optional({ checkFalsy: true })
+      .trim()
+      .isLength({ max: 50 })
+      .withMessage('Phone number is too long.'),
+    body('subject')
+      .trim()
+      .isIn(['booking', 'existing', 'fleet', 'pricing', 'support', 'other'])
+      .withMessage('Please select a valid subject.'),
+    body('message')
+      .trim()
+      .isLength({ min: 10, max: 1000 })
+      .withMessage('Message must be between 10 and 1000 characters.'),
+  ],
+  contactController.postContact
+);
 
 // Category page
 // category routes removed

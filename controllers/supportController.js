@@ -1,6 +1,7 @@
 // Support pages controller
 const Car = require('../models/Car');
 const { FEES } = require('../utils/fees');
+const { validationResult } = require('express-validator');
 
 
 // Get phone support page
@@ -102,17 +103,25 @@ exports.getCarsSummary = async (req, res, next) => {
 
 // GET /api/chat/cars-by-filter
 exports.getCarsByFilter = async (req, res, next) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.status(400).json({
+      error: 'Invalid filter parameters',
+      details: errors.array(),
+    });
+  }
+
   try {
     const { fuelType, transmission, seatsMin, seatsMax } = req.query;
-    
+
     const filter = { availability: true };
-    
+
     if (fuelType) filter.fuelType = fuelType;
     if (transmission) filter.transmission = transmission;
     if (seatsMin || seatsMax) {
       filter.seats = {};
-      if (seatsMin) filter.seats.$gte = parseInt(seatsMin);
-      if (seatsMax) filter.seats.$lte = parseInt(seatsMax);
+      if (seatsMin) filter.seats.$gte = parseInt(seatsMin, 10);
+      if (seatsMax) filter.seats.$lte = parseInt(seatsMax, 10);
     }
 
     const cars = await Car.find(filter)
@@ -147,11 +156,19 @@ exports.getPricingInfo = async (req, res, next) => {
 
 // GET /api/chat/car-details/:carId
 exports.getCarDetails = async (req, res, next) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.status(400).json({
+      error: 'Invalid car id',
+      details: errors.array(),
+    });
+  }
+
   try {
     const { carId } = req.params;
-    
+
     const car = await Car.findById(carId).lean();
-    
+
     if (!car) {
       return res.status(404).json({ error: 'Car not found' });
     }

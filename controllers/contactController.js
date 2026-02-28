@@ -1,8 +1,10 @@
+const { validationResult } = require('express-validator');
+
 // Get contacts page
 exports.getContacts = async (req, res, next) => {
   try {
     res.render('contacts', {
-      title: 'Contact Us - Rent A Car'
+      title: 'Contact Us - Rent A Car',
     });
   } catch (err) {
     console.error('getContacts error:', err);
@@ -14,12 +16,30 @@ exports.getContacts = async (req, res, next) => {
 // Handle contact form submission
 exports.postContact = async (req, res, next) => {
   try {
+    const errors = validationResult(req);
+    if (!errors || !errors.isEmpty()) {
+      const firstError = errors.array()[0]?.msg || 'Please correct the form and try again.';
+      return res.status(422).render('contacts', {
+        title: 'Contact Us - Rent A Car',
+        errorMessage: firstError,
+      });
+    }
+
     const Contact = require('../models/Contact');
     const { name, email, phone, subject, message } = req.body;
-    await Contact.create({ name, email, phone, subject, message, status: 'new' });
-    res.render('contacts', {
+
+    await Contact.create({
+      name,
+      email,
+      phone,
+      subject,
+      message,
+      status: 'new',
+    });
+
+    return res.render('contacts', {
       title: 'Contact Us - Rent A Car',
-      successMessage: 'Thank you for your message! We will get back to you soon.'
+      successMessage: 'Thank you for your message! We will get back to you soon.',
     });
   } catch (err) {
     console.error('postContact error:', err);

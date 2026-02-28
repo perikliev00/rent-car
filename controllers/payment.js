@@ -351,6 +351,15 @@ exports.releaseActiveReservation = async (req, res) => {
 };
 
 exports.releaseAndReholdReservation = async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.status(422).json({
+      ok: false,
+      message: errors.array()[0]?.msg || 'Invalid request.',
+      errors: errors.array(),
+    });
+  }
+
   const {
     carId,
     pickupDate,
@@ -442,6 +451,8 @@ exports.releaseAndReholdReservation = async (req, res) => {
   }
 };
 
+
+
 exports.handleStripeWebhook = async (req, res) => {
   const logPrefix = '🌐 [StripeWebhook]';
   console.log('════════════════════════════════════════════════════');
@@ -449,17 +460,26 @@ exports.handleStripeWebhook = async (req, res) => {
     `${logPrefix} HIT @ ${new Date().toISOString()} ${req.method} ${req.originalUrl}`
   );
   console.log(`${logPrefix} Headers:`, JSON.stringify(req.headers, null, 2));
-  console.log(`${logPrefix} Parsed body:`, JSON.stringify(req.body, null, 2));
 
-  const event = req.body;
+  const sig = req.headers['stripe-signature'];
+  let event;
 
-  if (!event || !event.type) {
-    console.error(`${logPrefix} ❌ Invalid webhook payload (no type).`);
-    return res.status(400).send('Invalid payload');
+  try {
+    // req.body тук е Buffer, защото маршрутът в server.js е с express.raw()
+    event = stripe.webhooks.constructEvent(
+      req.body,
+      sig,
+      process.env.STRIPE_WEBHOOK_SECRET
+    );
+  } catch (err) {
+    console.error(`${logPrefix} ❌ Webhook signature verification failed:`, err.message);
+    return res.status(400).send(`Webhook Error: ${err.message}`);
   }
 
-  console.log(`${logPrefix} Event type: ${event.type}`, event.id ? `id=${event.id}` : '');
+  console.log(`${logPrefix} Parsed event type: ${event.type}`, event.id ? `id=${event.id}` : '');
 
+  // оттук надолу запазваш сегашната логика, но вместо `const event = req.body`
+  // използваш вече парсирания `event`
   if (event.type === 'checkout.session.completed') {
     const session = event.data && event.data.object;
     if (!session || !session.id) {

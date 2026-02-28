@@ -26,10 +26,40 @@ router.post(
   paymentController.createCheckoutSession
 );
 
+const LOCATIONS = [
+  'office', 'sunny-beach', 'sveti-vlas', 'nesebar', 'burgas', 'burgas-airport',
+  'sofia', 'sofia-airport', 'varna', 'varna-airport', 'plovdiv', 'eleni', 'ravda',
+];
+
 router.post('/reservations/release', csrfProtection, paymentController.releaseActiveReservation);
 router.post(
   '/reservations/release-and-rehold',
   csrfProtection,
+  [
+    body('carId')
+      .isMongoId()
+      .withMessage('Invalid car id.'),
+    body('pickupDate')
+      .notEmpty()
+      .withMessage('Pickup date is required.'),
+    body('returnDate')
+      .notEmpty()
+      .withMessage('Return date is required.'),
+    body('pickupTime')
+      .optional({ checkFalsy: true })
+      .matches(/^\d{1,2}:\d{2}$/)
+      .withMessage('Pickup time must be in HH:MM format.'),
+    body('returnTime')
+      .optional({ checkFalsy: true })
+      .matches(/^\d{1,2}:\d{2}$/)
+      .withMessage('Return time must be in HH:MM format.'),
+    body('pickupLocation')
+      .isIn(LOCATIONS)
+      .withMessage('Invalid pickup location.'),
+    body('returnLocation')
+      .isIn(LOCATIONS)
+      .withMessage('Invalid return location.'),
+  ],
   paymentController.releaseAndReholdReservation
 );
 router.get('/success', paymentController.handleCheckoutSuccess);
@@ -40,6 +70,6 @@ router.get('/webhook/stripe-test', (req, res) => {
   res.send('Webhook TEST OK');
 });
 
-router.post('/webhook/stripe', paymentController.handleStripeWebhook);
+// router.post('/webhook/stripe', paymentController.handleStripeWebhook);
 
 module.exports = router;

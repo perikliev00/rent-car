@@ -10,6 +10,8 @@ const path = require('path');
 const session = require('express-session');
 const MongoDBStore = require('connect-mongodb-session')(session);
 const helmet = require('helmet');
+const paymentController = require('./controllers/payment');
+const expressRaw = express.raw;
 const { adminLimiter } = require('./middleware/rateLimit');
 
 // Routes
@@ -42,9 +44,14 @@ app.use('/images', express.static(path.join(__dirname, 'public/images')));
 app.set('view engine', 'ejs');
 
 // Body Parsers
+app.post(
+  '/webhook/stripe',
+  express.raw({ type: 'application/json' }),
+  paymentController.handleStripeWebhook
+);
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(bodyParser.json());
-app.use(helmet({ contentSecurityPolicy: false }));
+app.use(helmet({ contentSecurityPolicy: true }));
 
 // ─────────────────────────────────────────────────────────────
 // Session store
@@ -66,7 +73,7 @@ if (isProd) {
 // Sessions (✅ works on localhost + prod)
 app.use(session({
   name: 'sid',
-  secret: process.env.SESSION_SECRET || 'change-me',
+  secret: process.env.SESSION_SECRET ,
   store,
   resave: false,
   saveUninitialized: false, // create session only when you set something
