@@ -709,6 +709,125 @@ input, select, textarea {
     background-image: none;
 }
 
+/* Custom in-house calendar input (CSP-safe, no third-party scripts) */
+.form-row .calendar-input {
+    cursor: pointer;
+    padding-right: 2.5rem;
+    background-image: linear-gradient(135deg, rgba(255, 210, 63, 0.08), rgba(255, 107, 53, 0.07));
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0.02em;
+}
+
+.form-row .calendar-input::placeholder {
+    color: #ffd23faa;
+}
+
+.form-row .pickup-date::after,
+.form-row .return-date::after {
+    content: '\1F4C5';
+    position: absolute;
+    right: 12px;
+    bottom: 16px;
+    color: var(--primary-color);
+    font-size: 1rem;
+    pointer-events: none;
+    opacity: 0.95;
+}
+
+.lr-calendar {
+    position: fixed;
+    z-index: 100000;
+    background: var(--background-medium);
+    border: 2px solid var(--primary-color);
+    border-radius: 12px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45),
+                0 0 0 1px rgba(255, 210, 63, 0.2),
+                0 4px 20px var(--shadow-primary);
+    backdrop-filter: blur(10px);
+    padding: 0.7rem;
+}
+
+.lr-calendar__head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: .5rem;
+    margin-bottom: .45rem;
+}
+
+.lr-calendar__title {
+    color: var(--primary-color);
+    font-weight: 800;
+    letter-spacing: .01em;
+}
+
+.lr-calendar__nav {
+    border: 2px solid var(--primary-color);
+    background: var(--background-light);
+    color: var(--primary-color);
+    border-radius: 8px;
+    width: 2rem;
+    height: 2rem;
+    cursor: pointer;
+    font-weight: 800;
+}
+
+.lr-calendar__nav:hover {
+    border-color: var(--secondary-color);
+    background: var(--background-medium);
+}
+
+.lr-calendar__week,
+.lr-calendar__grid {
+    display: grid;
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+    gap: .35rem;
+}
+
+.lr-calendar__weekday {
+    color: #ffd23fcc;
+    text-align: center;
+    font-size: .78rem;
+    font-weight: 700;
+    padding: .25rem 0;
+}
+
+.lr-calendar__cell {
+    border: 1px solid rgba(255, 210, 63, 0.25);
+    background: var(--background-light);
+    color: var(--text-primary);
+    border-radius: 8px;
+    min-height: 2rem;
+    cursor: pointer;
+    font-weight: 700;
+}
+
+.lr-calendar__cell:hover:not(:disabled) {
+    border-color: var(--secondary-color);
+    box-shadow: 0 0 0 2px var(--shadow-primary);
+}
+
+.lr-calendar__cell.is-selected {
+    background: linear-gradient(135deg, #ffd23f 0%, #ff6b35 100%);
+    color: #111;
+    border-color: var(--primary-color);
+}
+
+.lr-calendar__cell.is-today {
+    border-color: var(--primary-color);
+}
+
+.lr-calendar__cell:disabled {
+    opacity: .35;
+    cursor: not-allowed;
+}
+
+.lr-calendar__cell.is-empty {
+    visibility: hidden;
+    border: none;
+    pointer-events: none;
+}
+
 /* -------------------------------------------------
    Custom Dropdown Component Styles
 --------------------------------------------------*/
@@ -1916,128 +2035,5 @@ input, select, textarea {
     gap: 0.9rem;
     align-items: end;
   }
-}
-
-/* =======================================================
-   Fancy Flatpickr Calendar Styling
-======================================================= */
-.flatpickr-calendar {
-  background: linear-gradient(135deg, rgba(18, 18, 18, 0.95) 0%, rgba(12, 12, 12, 0.98) 100%);
-  border: 2px solid #ffd23f;
-  border-radius: 12px;
-  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5), 0 0 20px rgba(255, 210, 63, 0.2);
-  font-family: 'Inter', 'Poppins', sans-serif;
-  padding: 1rem;
-}
-
-.flatpickr-months {
-  background: transparent;
-  border-bottom: 1px solid rgba(255, 210, 63, 0.3);
-  padding-bottom: 0.5rem;
-  margin-bottom: 0.5rem;
-}
-
-.flatpickr-month {
-  color: #ffd23f;
-  font-weight: 700;
-  font-size: 1.1rem;
-}
-
-.flatpickr-prev-month,
-.flatpickr-next-month {
-  color: #ffd23f !important;
-  fill: #ffd23f !important;
-  padding: 0.5rem;
-  border-radius: 6px;
-  transition: all 0.3s ease;
-}
-
-.flatpickr-prev-month:hover,
-.flatpickr-next-month:hover {
-  background: rgba(255, 210, 63, 0.2);
-  transform: scale(1.1);
-}
-
-.flatpickr-weekdays {
-  background: transparent;
-  border-bottom: 1px solid rgba(255, 210, 63, 0.2);
-  margin-bottom: 0.5rem;
-}
-
-.flatpickr-weekday {
-  color: #ffd23f;
-  font-weight: 600;
-  font-size: 0.85rem;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-}
-
-.flatpickr-day {
-  color: #fff;
-  border-radius: 8px;
-  transition: all 0.2s ease;
-  font-weight: 500;
-}
-
-.flatpickr-day:hover {
-  background: rgba(255, 210, 63, 0.3);
-  border-color: #ffd23f;
-  transform: scale(1.05);
-}
-
-.flatpickr-day.selected,
-.flatpickr-day.startRange,
-.flatpickr-day.endRange {
-  background: linear-gradient(135deg, #ffd23f 0%, #ff6b35 100%);
-  border-color: #ffd23f;
-  color: #111;
-  font-weight: 700;
-  box-shadow: 0 4px 12px rgba(255, 210, 63, 0.4);
-}
-
-.flatpickr-day.today {
-  border-color: #ffd23f;
-  background: rgba(255, 210, 63, 0.15);
-  font-weight: 700;
-}
-
-.flatpickr-day.flatpickr-disabled,
-.flatpickr-day.prevMonthDay,
-.flatpickr-day.nextMonthDay {
-  color: rgba(255, 255, 255, 0.3);
-  opacity: 0.5;
-}
-
-.flatpickr-day.flatpickr-disabled {
-  cursor: not-allowed;
-}
-
-.flatpickr-time {
-  border-top: 1px solid rgba(255, 210, 63, 0.3);
-  padding-top: 0.5rem;
-}
-
-.flatpickr-time input {
-  color: #ffd23f;
-  font-weight: 600;
-}
-
-.flatpickr-time .flatpickr-time-separator {
-  color: #ffd23f;
-}
-
-/* Month/Year selector styling */
-.flatpickr-monthDropdown-months,
-.flatpickr-current-month .flatpickr-monthDropdown-months {
-  background: rgba(18, 18, 18, 0.95);
-  border: 1px solid #ffd23f;
-  color: #ffd23f;
-  border-radius: 6px;
-  padding: 0.25rem 0.5rem;
-  font-weight: 600;
-}
-
-.flatpickr-monthDropdown-months:hover {
-  background: rgba(255, 210, 63, 0.2);
 }
 
