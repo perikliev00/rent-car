@@ -1,13 +1,10 @@
 const express = require('express');
-const expressValidator = require('express-validator');
 const router = express.Router();
-const { body, validationResult } = require('express-validator');
-const Car = require('../models/Car'); // Ensure you have a Car model
-const homeController = require('../controllers/homeController'); // Ensure you have a controller for handling requests
-const availableCarsController = require('../controllers/availableCars'); // Ensure you have a controller for handling requests
-const orderCarController = require('../controllers/orderCar'); // Ensure you have a controller for handling requests
-const aboutController = require('../controllers/aboutController'); // About controller
-const contactController = require('../controllers/contactController'); // Contact controller
+const { body } = require('express-validator');
+const homeController = require('../controllers/homeController');
+const availableCarsController = require('../controllers/availableCarsController');
+const aboutController = require('../controllers/aboutController');
+const contactController = require('../controllers/contactController');
 const { contactLimiter } = require('../middleware/rateLimit');
 const { csrfProtection, setCsrfToken } = require('../middleware/csrf');
 // Categories feature removed
@@ -24,7 +21,6 @@ router.post('/postSearchCars', csrfProtection, setCsrfToken,[
 ], availableCarsController.postSearchCars);
 // Pagination-friendly GET for search results (links use query params)
 // removed GET pagination route per user request
-router.post('/orders', csrfProtection, setCsrfToken, orderCarController.getOrderCar);
 router.get('/about', aboutController.getAbout);
 router.get('/contacts', csrfProtection, setCsrfToken, contactController.getContacts);
 router.post(

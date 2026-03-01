@@ -35,7 +35,8 @@ const reservationSchema = new mongoose.Schema(
       index: true,
     },
     holdExpiresAt: { type: Date, required: true, index: true },
-    stripeSessionId: { type: String, index: true },
+    // unique + sparse: един Stripe checkout session → най-много една резервация; sparse = уникалност само за документи с зададено stripeSessionId
+    stripeSessionId: { type: String, index: true, unique: true, sparse: true },
     stripePaymentIntentId: String,
   },
   { timestamps: true }

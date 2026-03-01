@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const Reservation = require('../models/Reservation');
 const Car = require('../models/Car');
 const {
@@ -124,11 +125,50 @@ async function createPendingReservation({
   });
 }
 
+/**
+ * Housekeep reservations whose holds expired or sessions vanished.
+ * Marks as expired: active reservations with holdExpiresAt <= now, no sessionId, or sessionId not in active sessions.
+ */
+async function cleanUpAbandonedReservations() {
+  try {
+    const nowUTC = new Date();
+    const sessionsColl = mongoose.connection.collection('sessions');
+    const sessions = await sessionsColl
+      .find({ expires: { $gt: nowUTC } }, { projection: { _id: 1 } })
+      .toArray();
+
+    const activeSids = sessions.map(s => String(s._id));
+    const orCriteria = [
+      { holdExpiresAt: { $lte: nowUTC } },
+      { sessionId: { $exists: false } },
+      { sessionId: null },
+    ];
+    if (activeSids.length) {
+      orCriteria.push({ sessionId: { $nin: activeSids } });
+    }
+
+    const updated = await Reservation.updateMany(
+      {
+        status: { $in: ACTIVE_RESERVATION_STATUSES },
+        $or: orCriteria
+      },
+      { $set: { status: 'expired', holdExpiresAt: nowUTC } }
+    );
+
+    if (updated.modifiedCount) {
+      console.log(`🧽 Marked ${updated.modifiedCount} reservation(s) as expired or abandoned.`);
+    }
+  } catch (err) {
+    console.error('Cleanup error (abandoned reservations):', err);
+  }
+}
+
 module.exports = {
   findActiveReservationBySession,
   releaseActiveReservationForSession,
   extendReservationHold,
   checkCarAvailabilityForRange,
   createPendingReservation,
+  cleanUpAbandonedReservations,
 };
 

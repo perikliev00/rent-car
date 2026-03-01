@@ -20,6 +20,7 @@ const {
 const {
   finalizeReservationByStripeSessionId,
 } = require('../services/bookingFinalizationService');
+const ProcessedStripeEvent = require('../models/ProcessedStripeEvent');
 
 function renderOrderPage(req, res, car, formData, message, options = {}) {
   const viewModel = buildOrderPageViewModel(car, formData, message, options);
@@ -258,7 +259,7 @@ exports.createCheckoutSession = async (req, res, next) => {
 };
 
 exports.handleCheckoutSuccess = async (req, res, next) => {
-  console.log('💥 /success HIT, query =', req.query);
+  console.log('💥 /success HIT');
 
   const stripeSessionId = req.query.session_id;
   if (!stripeSessionId) {
@@ -291,15 +292,6 @@ exports.handleCheckoutSuccess = async (req, res, next) => {
       return res.render('success', { title: 'Payment Success' });
     }
 
-    if (result.finalized && result.reservation) {
-      console.log(
-        '✅ Reservation confirmed via /success handler:',
-        result.reservation._id.toString(),
-        'for stripeSessionId =',
-        stripeSessionId
-      );
-    }
-
     // 5) Показваме success страница
     return res.render('success', { title: 'Payment Success' });
   } catch (err) {
@@ -320,137 +312,6 @@ exports.handleCheckoutCancel = async (req, res) => {
   res.send('Payment cancelled. You can start a new reservation when ready.');
 };
 
-exports.releaseActiveReservation = async (req, res) => {
-  const wantsJson =
-    req.headers.accept && req.headers.accept.includes('application/json');
-  const redirectTo = req.body.redirect || req.get('referer') || '/';
-
-  try {
-    const { cancelled } = await releaseActiveReservationForSession(req);
-
-    if (!cancelled) {
-      if (wantsJson) {
-        return res.status(404).json({ ok: false, message: 'No active reservation.' });
-      }
-      return res.redirect(redirectTo);
-    }
-
-    if (wantsJson) {
-      return res.json({ ok: true });
-    }
-    return res.redirect(redirectTo);
-  } catch (err) {
-    console.error('Release reservation error:', err);
-    if (wantsJson) {
-      return res
-        .status(500)
-        .json({ ok: false, message: 'Failed to release reservation.' });
-    }
-    return res.redirect(redirectTo);
-  }
-};
-
-exports.releaseAndReholdReservation = async (req, res) => {
-  const errors = validationResult(req);
-  if (!errors.isEmpty()) {
-    return res.status(422).json({
-      ok: false,
-      message: errors.array()[0]?.msg || 'Invalid request.',
-      errors: errors.array(),
-    });
-  }
-
-  const {
-    carId,
-    pickupDate,
-    returnDate,
-    pickupTime,
-    returnTime,
-    pickupLocation,
-    returnLocation,
-  } = req.body || {};
-
-  try {
-    const car = await Car.findById(carId);
-    if (!car) {
-      return res.status(404).json({ ok: false, message: 'Car not found' });
-    }
-
-    const normalizedPickupTime = pickupTime || '00:00';
-    const normalizedReturnTime = returnTime || '23:59';
-
-    const {
-      isValid,
-      errors: bookingErrors,
-      startDate,
-      endDate,
-    } = validateBookingDates({
-      pickupDate,
-      returnDate,
-      pickupTime: normalizedPickupTime,
-      returnTime: normalizedReturnTime,
-    });
-
-    if (!isValid || !startDate || !endDate) {
-      return res.status(422).json({
-        ok: false,
-        message: bookingErrors[0] || 'Invalid booking dates',
-      });
-    }
-
-    const pricing = computeBookingPrice(
-      car,
-      startDate,
-      endDate,
-      pickupLocation,
-      returnLocation
-    );
-    if (!pricing || !Number.isFinite(pricing.totalPrice) || pricing.totalPrice <= 0) {
-      return res.status(422).json({ ok: false, message: 'Unable to calculate price' });
-    }
-
-    // 1) Release any currently active reservation for this session (ignore if none).
-    await releaseActiveReservationForSession(req);
-
-    // 2) Check availability AFTER releasing.
-    const { overlappingReservation, bookedOverlap } =
-      await checkCarAvailabilityForRange({
-        carId: car._id,
-        startDate,
-        endDate,
-        now: new Date(),
-      });
-
-    if (overlappingReservation || bookedOverlap) {
-      return res.status(409).json({
-        ok: false,
-        message: 'Selected car is already reserved/booked in this period.',
-      });
-    }
-
-    // 3) Create a brand-new pending reservation for the current page values.
-    await createPendingReservation({
-      carId: car._id,
-      sessionId: getSessionId(req),
-      startDate,
-      endDate,
-      pickupTime: normalizedPickupTime,
-      returnTime: normalizedReturnTime,
-      pickupLocation,
-      returnLocation,
-      pricing,
-    });
-
-    return res.status(200).json({ ok: true, reheld: true });
-  } catch (err) {
-    console.error('releaseAndReholdReservation error:', err);
-    return res.status(500).json({
-      ok: false,
-      message: 'Failed to release and re-hold reservation.',
-    });
-  }
-};
-
 
 
 exports.handleStripeWebhook = async (req, res) => {
@@ -459,13 +320,12 @@ exports.handleStripeWebhook = async (req, res) => {
   console.log(
     `${logPrefix} HIT @ ${new Date().toISOString()} ${req.method} ${req.originalUrl}`
   );
-  console.log(`${logPrefix} Headers:`, JSON.stringify(req.headers, null, 2));
-
+  // Do not log req.headers (contains cookie, user-agent, etc.)
   const sig = req.headers['stripe-signature'];
   let event;
 
   try {
-    // req.body тук е Buffer, защото маршрутът в server.js е с express.raw()
+    // req.body тук е Buffer, защото маршрутът в server.js е с express.raw() — нужен е за проверка на подписа
     event = stripe.webhooks.constructEvent(
       req.body,
       sig,
@@ -478,8 +338,6 @@ exports.handleStripeWebhook = async (req, res) => {
 
   console.log(`${logPrefix} Parsed event type: ${event.type}`, event.id ? `id=${event.id}` : '');
 
-  // оттук надолу запазваш сегашната логика, но вместо `const event = req.body`
-  // използваш вече парсирания `event`
   if (event.type === 'checkout.session.completed') {
     const session = event.data && event.data.object;
     if (!session || !session.id) {
@@ -489,6 +347,23 @@ exports.handleStripeWebhook = async (req, res) => {
 
     const stripeSessionId = session.id;
     console.log(`${logPrefix} checkout.session.completed for session ${stripeSessionId}`);
+
+    // ——— Идемпотентност по event.id ———
+    // Опит за запис на този event в ProcessedStripeEvent. Ако event вече е бил обработен
+    // (напр. Stripe retry), insert ще върне duplicate key (11000) и пропускаме финализацията.
+    try {
+      await ProcessedStripeEvent.create({
+        eventId: event.id,
+        stripeSessionId,
+        processedAt: new Date(),
+      });
+    } catch (err) {
+      if (err.code === 11000) {
+        console.log(`${logPrefix} ℹ️ Event ${event.id} already processed (duplicate key), skipping`);
+        return res.status(200).json({ received: true });
+      }
+      throw err;
+    }
 
     try {
       const result = await finalizeReservationByStripeSessionId(stripeSessionId, {

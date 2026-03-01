@@ -10,23 +10,23 @@ const path = require('path');
 const session = require('express-session');
 const MongoDBStore = require('connect-mongodb-session')(session);
 const crypto = require('crypto');
-const paymentController = require('./controllers/payment');
+const checkoutController = require('./controllers/checkoutController');
 const expressRaw = express.raw;
 const { adminLimiter } = require('./middleware/rateLimit');
 const applySecurity = require('./config/security');
 
 // Routes
 const paymentRoutes = require('./routes/paymentRoutes');
+const reservationRoutes = require('./routes/reservationRoutes');
 const carRoutes     = require('./routes/carRoutes');
 const adminRoutes   = require('./routes/adminRoutes');
 const supportRoutes = require('./routes/supportRoutes');
 const footerRoutes  = require('./routes/footerRoutes');
 const authRoutes    = require('./routes/authRoutes');
 
-// Models
-const Car = require('./models/Car');
-const Reservation = require('./models/Reservation'); // use reservations in housekeeping
-const { ACTIVE_RESERVATION_STATUSES } = require('./utils/reservationHelpers');
+// Housekeeping (cleanup services)
+const { cleanUpOutdatedDates } = require('./services/carService');
+const { cleanUpAbandonedReservations } = require('./services/reservationService');
 
 // ─────────────────────────────────────────────────────────────
 // Constants
@@ -48,7 +48,7 @@ app.set('view engine', 'ejs');
 app.post(
   '/webhook/stripe',
   express.raw({ type: 'application/json' }),
-  paymentController.handleStripeWebhook
+  checkoutController.handleStripeWebhook
 );
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(bodyParser.json());
@@ -123,6 +123,7 @@ app.use((req, res, next) => {
 // ─────────────────────────────────────────────────────────────
 // Routes
 app.use(carRoutes);
+app.use(reservationRoutes);
 app.use(paymentRoutes);
 app.use(authRoutes);
 app.use(adminLimiter, adminRoutes);
@@ -179,114 +180,6 @@ app.use((err, req, res, next) => {
     message,
   });
 });
-
-// ─────────────────────────────────────────────────────────────
-// Housekeeping helpers
-
-async function cleanUpOutdatedDates() {
-  try {
-    const result = await Car.updateMany(
-      {},
-      [
-        {
-          $set: {
-            dates: {
-              $map: {
-                input: { $ifNull: ["$dates", []] },
-                as: "d",
-                in: {
-                  $mergeObjects: [
-                    "$$d",
-                    {
-                      startDate: {
-                        $convert: { input: "$$d.startDate", to: "date", onError: null, onNull: null }
-                      },
-                      endDate: {
-                        $convert: { input: "$$d.endDate", to: "date", onError: null, onNull: null }
-                      }
-                    }
-                  ]
-                }
-              }
-            }
-          }
-        },
-        {
-          $set: {
-            dates: {
-              $filter: {
-                input: "$dates",
-                as: "d",
-                cond: {
-                  $and: [
-                    { $ne: ["$$d.endDate", null] },
-                    {
-                      $gt: [
-                        {
-                          $dateToString: {
-                            date: "$$d.endDate",
-                            format: "%Y-%m-%dT%H:%M:%S",
-                            timezone: "Europe/Sofia"
-                          }
-                        },
-                        {
-                          $dateToString: {
-                            date: "$$NOW",
-                            format: "%Y-%m-%dT%H:%M:%S",
-                            timezone: "Europe/Sofia"
-                          }
-                        }
-                      ]
-                    }
-                  ]
-                }
-              }
-            }
-          }
-        }
-      ]
-    );
-
-    console.log(`🧹 Car.dates cleanup (Sofia): matched=${result.matchedCount ?? result.n}, modified=${result.modifiedCount ?? result.nModified}`);
-  } catch (err) {
-    console.error('Cleanup error (Car.dates Sofia):', err);
-  }
-}
-
-// Housekeep reservations whose holds expired or sessions vanished
-async function cleanUpAbandonedReservations() {
-  try {
-    const nowUTC = new Date();
-    const sessionsColl = mongoose.connection.collection('sessions');
-    const sessions = await sessionsColl
-      .find({ expires: { $gt: nowUTC } }, { projection: { _id: 1 } })
-      .toArray();
-
-    const activeSids = sessions.map(s => String(s._id));
-    const orCriteria = [
-      { holdExpiresAt: { $lte: nowUTC } },
-      { sessionId: { $exists: false } },
-      { sessionId: null },
-    ];
-    if (activeSids.length) {
-      orCriteria.push({ sessionId: { $nin: activeSids } });
-    }
-
-    const updated = await Reservation.updateMany(
-      {
-        status: { $in: ACTIVE_RESERVATION_STATUSES },
-        $or: orCriteria
-      },
-      { $set: { status: 'expired', holdExpiresAt: nowUTC } }
-    );
-
-    if (updated.modifiedCount) {
-      console.log(`🧽 Marked ${updated.modifiedCount} reservation(s) as expired or abandoned.`);
-    }
-  } catch (err) {
-    console.error('Cleanup error (abandoned reservations):', err);
-  }
-}
 
 // ─────────────────────────────────────────────────────────────
 // Connect & start

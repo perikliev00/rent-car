@@ -1,39 +1,46 @@
 const express = require('express');
-const mongoose = require('mongoose');
-
-const Reservation = require('../models/Reservation');
-const { ACTIVE_RESERVATION_STATUSES } = require('../utils/reservationHelpers');
+const { body } = require('express-validator');
+const bookingController = require('../controllers/bookingController');
+const { csrfProtection, setCsrfToken } = require('../middleware/csrf');
 
 const router = express.Router();
 
-router.post('/reservations/release', async (req, res, next) => {
-  try {
-    const sessionId = req.sessionID;
-    if (!sessionId) {
-      const back = req.body.redirect || req.get('referer') || '/';
-      return res.redirect(303, back);
-    }
+const LOCATIONS = [
+  'office', 'sunny-beach', 'sveti-vlas', 'nesebar', 'burgas', 'burgas-airport',
+  'sofia', 'sofia-airport', 'varna', 'varna-airport', 'plovdiv', 'eleni', 'ravda',
+];
 
-    const q = { sessionId, status: { $in: ACTIVE_RESERVATION_STATUSES } };
-    if (req.body && req.body.reservationId && mongoose.isValidObjectId(String(req.body.reservationId))) {
-      q._id = String(req.body.reservationId);
-    }
-
-    const now = new Date();
-    await Reservation.findOneAndUpdate(
-      q,
-      { $set: { status: 'expired', holdExpiresAt: now } },
-      { new: true }
-    );
-
-    try { req.session.releasedAt = Date.now(); } catch (e) {}
-
-    const back = req.body.redirect || req.get('referer') || '/';
-    return res.redirect(303, back);
-  } catch (err) {
-    return next(err);
-  }
-});
+router.post('/orders', csrfProtection, setCsrfToken, bookingController.getOrderCar);
+router.post('/reservations/release', csrfProtection, bookingController.releaseActiveReservation);
+router.post(
+  '/reservations/release-and-rehold',
+  csrfProtection,
+  [
+    body('carId')
+      .isMongoId()
+      .withMessage('Invalid car id.'),
+    body('pickupDate')
+      .notEmpty()
+      .withMessage('Pickup date is required.'),
+    body('returnDate')
+      .notEmpty()
+      .withMessage('Return date is required.'),
+    body('pickupTime')
+      .optional({ checkFalsy: true })
+      .matches(/^\d{1,2}:\d{2}$/)
+      .withMessage('Pickup time must be in HH:MM format.'),
+    body('returnTime')
+      .optional({ checkFalsy: true })
+      .matches(/^\d{1,2}:\d{2}$/)
+      .withMessage('Return time must be in HH:MM format.'),
+    body('pickupLocation')
+      .isIn(LOCATIONS)
+      .withMessage('Invalid pickup location.'),
+    body('returnLocation')
+      .isIn(LOCATIONS)
+      .withMessage('Invalid return location.'),
+  ],
+  bookingController.releaseAndReholdReservation
+);
 
 module.exports = router;
-

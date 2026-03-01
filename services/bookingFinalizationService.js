@@ -3,6 +3,19 @@ const Order = require('../models/Order');
 const { addRange } = require('../utils/bookingSync');
 const { ACTIVE_RESERVATION_STATUSES } = require('../utils/reservationHelpers');
 
+/**
+ * Финализира резервация по Stripe checkout session ID: обновява Car.dates, създава Order,
+ * маркира резервацията като confirmed.
+ *
+ * Идемпотентност (редът на проверките има значение):
+ * 1) Webhook handler-ът вече е записал event.id в ProcessedStripeEvent — повторни доставки на същия event не стигат до тук.
+ * 2) Ако резервацията вече е confirmed, не правим нищо (защита при /success + webhook или при някакъв друг път).
+ * 3) Reservation.stripeSessionId е unique (sparse) — един session ID съответства на най-много една резервация.
+ *
+ * @param {string} stripeSessionId — ID на Stripe Checkout Session (cs_xxx)
+ * @param {object} options — { logPrefix, requireActiveStatus }. requireActiveStatus: да отхвърляме ако status не е pending/processing
+ * @returns {Promise<{ found, finalized, reservation, reason }>}
+ */
 async function finalizeReservationByStripeSessionId(stripeSessionId, options = {}) {
   const { logPrefix, requireActiveStatus = false } = options;
 
@@ -15,6 +28,7 @@ async function finalizeReservationByStripeSessionId(stripeSessionId, options = {
     return { found: false, finalized: false, reservation: null, reason: 'not_found' };
   }
 
+  // От webhook искаме да финализираме само активни (pending/processing); вече confirmed не пипаме
   if (requireActiveStatus && !ACTIVE_RESERVATION_STATUSES.includes(reservation.status)) {
     if (logPrefix) {
       console.warn(
@@ -32,6 +46,7 @@ async function finalizeReservationByStripeSessionId(stripeSessionId, options = {
     };
   }
 
+  // Втора линия идемпотентност: ако вече е confirmed (напр. от /success), не дублираме Order и addRange
   if (reservation.status === 'confirmed') {
     if (logPrefix) {
       console.log(
@@ -49,6 +64,7 @@ async function finalizeReservationByStripeSessionId(stripeSessionId, options = {
 
   const carId = reservation.carId?._id || reservation.carId;
 
+  // Единствен път, в който стигаме до тук за този stripeSessionId (защитено от event.id + status checks по-горе)
   await addRange(carId, reservation.pickupDate, reservation.returnDate, null);
 
   await Order.create({
