@@ -10,6 +10,12 @@ const { validationResult } = require('express-validator');
 const Reservation = require('../models/Reservation');
 // Изчислява цена: дневна, доставка, връщане, обща
 const { computeBookingPrice } = require('../utils/pricing');
+const {
+  parseCarFilterRaw,
+  applyCarCriteriaToMongoMatch,
+  filterCarsByComputedUnitPrice,
+  filtersViewModel,
+} = require('../utils/carFilters');
 // Активни статуси на резервация + функция за session ID (да изключим собствените резервации)
 const { ACTIVE_RESERVATION_STATUSES, getSessionId } = require('../utils/reservationHelpers');
 // Валидира дати и времена за наемане (не в миналото, return след pickup и т.н.)
@@ -17,11 +23,6 @@ const { validateBookingDates } = require('../utils/bookingValidation');
 
 // Милисекунди в един ден – за изчисление на броя дни на наем
 const MS_PER_DAY = 86_400_000;
-
-// Екранира специални regex символи в низ – използва се за transmission/fuelType в заявката, за да няма regex инжекция
-function escapeRegex(s) {
-  return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
 
 // ---------------------------------------------
 // Контролер: POST /search (резултати от търсене)
@@ -87,13 +88,12 @@ exports.postSearchCars = async (req, res, next) => {
     const page = Math.max(1, parseInt(req.body.page || req.query.page || '1', 10));
     const perPage = 3; // също като home страницата
 
-    const allCars = await Car.find();
-    const totalCars = allCars.length;
+    const totalCars = await Car.countDocuments({});
     const totalPages = Math.max(1, Math.ceil(totalCars / perPage));
-
-    // Коли за текущата страница (slice за показ на index)
-    const startIdx = (page - 1) * perPage;
-    const cars = allCars.slice(startIdx, startIdx + perPage);
+    const cars = await Car.find({})
+      .sort({ name: 1 })
+      .skip((page - 1) * perPage)
+      .limit(perPage);
 
     // ISO дати за placeholder в полетата (днес / утре по подразбиране)
     const tomorrow = new Date(today);
@@ -175,51 +175,15 @@ exports.postSearchCars = async (req, res, next) => {
     const activeReservations = await Reservation.find(reservationQuery).select('carId');
     const blockedCarIds = activeReservations.map((r) => r.carId);
 
-    // -----------------------------
-    // Ефективни филтри за заявката (нормализирани; категорията може да подаде transmission/fuelType/seats)
-    // -----------------------------
-    const norm = (v) => String(v ?? '').trim().toLowerCase();
-    const toNumOrUndef = (v) => {
-      if (v === undefined || v === null) return undefined;
-      const s = String(v).trim();
-      if (!s) return undefined;
-      const n = Number(s);
-      return Number.isFinite(n) ? n : undefined;
-    };
-
-    const cat = norm(category);
-    let effectiveTransmission = norm(transmission);
-    let effectiveFuelType = norm(fuelType);
-    let effectiveSeatsMin = toNumOrUndef(seatsMin);
-    let effectiveSeatsMax = toNumOrUndef(seatsMax);
-
-    // Ако категорията е automatic/manual – използваме я като филтър за трансмисия
-    if (!effectiveTransmission && (cat === 'automatic' || cat === 'manual')) {
-      effectiveTransmission = cat;
-    }
-    // Ако категорията е тип гориво – използваме я като филтър за гориво
-    if (
-      !effectiveFuelType &&
-      (cat === 'petrol' || cat === 'diesel' || cat === 'electric' || cat === 'hybrid')
-    ) {
-      effectiveFuelType = cat;
-    }
-    // Категории за брой седалки – задават min/max седалки
-    if (effectiveSeatsMin === undefined && effectiveSeatsMax === undefined) {
-      if (cat === 'seats-2-3') {
-        effectiveSeatsMin = 2;
-        effectiveSeatsMax = 3;
-      } else if (cat === 'seats-4-5') {
-        effectiveSeatsMin = 4;
-        effectiveSeatsMax = 5;
-      } else if (cat === 'seats-6-9') {
-        effectiveSeatsMin = 6;
-        effectiveSeatsMax = 9;
-      }
-    }
-
-    const effectivePriceMin = toNumOrUndef(priceMin);
-    const effectivePriceMax = toNumOrUndef(priceMax);
+    const criteria = parseCarFilterRaw({
+      category,
+      transmission,
+      fuelType,
+      seatsMin,
+      seatsMax,
+      priceMin,
+      priceMax,
+    });
 
     // Брой дни на наем (най-малко 1) – за изчисление на цена и избор на ценов тиър
     const rentalDays = Math.max(
@@ -243,36 +207,7 @@ exports.postSearchCars = async (req, res, next) => {
       }
     };
 
-    if (effectiveTransmission) {
-      match.transmission = new RegExp(`^${escapeRegex(effectiveTransmission)}$`, 'i');
-    }
-    if (effectiveFuelType) {
-      match.fuelType = new RegExp(`^${escapeRegex(effectiveFuelType)}$`, 'i');
-    }
-    if (effectiveSeatsMin !== undefined || effectiveSeatsMax !== undefined) {
-      match.seats = {};
-      if (effectiveSeatsMin !== undefined) match.seats.$gte = effectiveSeatsMin;
-      if (effectiveSeatsMax !== undefined) match.seats.$lte = effectiveSeatsMax;
-    }
-
-    /* Приблизителен филтър по цена в БД – по подходящ тиър според rentalDays или price */
-    if (effectivePriceMin !== undefined || effectivePriceMax !== undefined) {
-      const min = effectivePriceMin ?? 0;
-      const max = effectivePriceMax ?? 999999;
-      const tierField =
-        rentalDays <= 3
-          ? 'priceTier_1_3'
-          : rentalDays <= 31
-            ? 'priceTier_7_31'
-            : 'priceTier_31_plus';
-      match.$or = [
-        { [tierField]: { $exists: true, $gte: min, $lte: max } },
-        {
-          [tierField]: { $exists: false },
-          price: { $gte: min, $lte: max }
-        }
-      ];
-    }
+    applyCarCriteriaToMongoMatch(match, criteria, rentalDays);
 
     /* 4. Пагинация в БД: взимаме само текущата страница и общия брой */
     const toInt = (v, fallback) => {
@@ -313,17 +248,7 @@ exports.postSearchCars = async (req, res, next) => {
       };
     });
 
-    /* Точен филтър по цена в памет – ако приближението в БД е пропуснало edge cases */
-    if (effectivePriceMin !== undefined || effectivePriceMax !== undefined) {
-      pageCars = pageCars.filter((car) => {
-        const unit = Number(car.unitPrice ?? car.price);
-        if (effectivePriceMin !== undefined && (!Number.isFinite(unit) || unit < effectivePriceMin))
-          return false;
-        if (effectivePriceMax !== undefined && (!Number.isFinite(unit) || unit > effectivePriceMax))
-          return false;
-        return true;
-      });
-    }
+    pageCars = filterCarsByComputedUnitPrice(pageCars, criteria);
 
     // Общи стойности за шаблона (при еднакви дати/локации са еднакви за всички коли на страницата)
     const sharedRentalDays = pageCars[0]?.rentalDays || 0;
@@ -345,15 +270,13 @@ exports.postSearchCars = async (req, res, next) => {
       cars: pageCars,
       currentPage,
       totalPages,
-      filters: {
-        transmission: effectiveTransmission || '',
-        fuelType: effectiveFuelType || '',
-        priceMin: effectivePriceMin !== undefined ? String(effectivePriceMin) : (priceMin || ''),
-        priceMax: effectivePriceMax !== undefined ? String(effectivePriceMax) : (priceMax || ''),
-        seatsMin: effectiveSeatsMin !== undefined ? String(effectiveSeatsMin) : (seatsMin || ''),
-        seatsMax: effectiveSeatsMax !== undefined ? String(effectiveSeatsMax) : (seatsMax || ''),
-      },
-      category: cat || '',
+      filters: filtersViewModel(criteria, {
+        priceMin,
+        priceMax,
+        seatsMin,
+        seatsMax,
+      }),
+      category: criteria.category || '',
     });
   } catch (err) {
     console.error(err);
