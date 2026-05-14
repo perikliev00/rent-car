@@ -16,7 +16,6 @@
     crossorigin="anonymous"
     referrerpolicy="no-referrer"
   />
-  <link rel="stylesheet" href="/vendor/flatpickr/flatpickr.min.css">
 </head>
 <body class="search-results">
   <%- include('partials/header') %>
@@ -102,7 +101,7 @@
 
           <div class="filters-field">
             <label for="flt-category">Browse by Category</label>
-            <select id="flt-category" name="category" class="filters-select" onchange="this.form.submit()">
+            <select id="flt-category" name="category" class="filters-select">
               <option value="" <%= cat === '' ? 'selected' : '' %>>All</option>
               <option value="automatic" <%= cat === 'automatic' ? 'selected' : '' %>>Automatic</option>
               <option value="manual" <%= cat === 'manual' ? 'selected' : '' %>>Manual</option>
@@ -189,9 +188,9 @@
   
 
   <%- include('partials/footer') %>
-  <script src="/vendor/flatpickr/flatpickr.min.js"></script>
   <script src="/js/datePicker.js"></script>
   <script src="/js/customDropdown.js"></script>
+  <script src="/js/filterCategorySync.js"></script>
   <script src="/js/mobileNav.js"></script>
   <script src="/js/ajaxPagination.js"></script>
 </body>
