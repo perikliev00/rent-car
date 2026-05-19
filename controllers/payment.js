@@ -1,4 +1,6 @@
+// Зареждаме Stripe клиента от config.
 const stripe = require('../config/stripe');
+// validationResult чете грешките от express-validator в routes.
 const { validationResult } = require('express-validator');
 
 const Car = require('../models/Car');
@@ -19,48 +21,50 @@ const {
 } = require('../services/reservationService');
 const {
   finalizeReservationByStripeSessionId,
+  processStripeWebhookEvent,
 } = require('../services/bookingFinalizationService');
-const ProcessedStripeEvent = require('../models/ProcessedStripeEvent');
+const asyncHandler = require('../utils/asyncHandler');
+const {
+  ExternalServiceError,
+  NotFoundError,
+  ValidationError,
+} = require('../utils/appError');
 
+// Преизгражда order page с view model, CSRF token и status code.
 function renderOrderPage(req, res, car, formData, message, options = {}) {
+  // Извикваме paymentService да събере view model от car, formData, message.
   const viewModel = buildOrderPageViewModel(car, formData, message, options);
 
-  // Use CSRF token prepared by route-level middleware
+  // Добавяме CSRF token ако middleware го е подготвил.
   if (res.locals && res.locals.csrfToken) {
     viewModel.csrfToken = res.locals.csrfToken;
   }
 
+  // Render с 422 или custom statusCode, връщаме orderMain шаблона.
   return res.status(options.statusCode || 422).render('orderMain', viewModel);
 }
 
-exports.createCheckoutSession = async (req, res, next) => {
-  const errors = validationResult(req);
-  const formData = req.body;
-  formData.releaseRedirect = req.originalUrl;
+// createCheckoutSession – валидира форма, резерва кола, създава Stripe session, redirect.
+exports.createCheckoutSession = asyncHandler(async (req, res) => {
+  const errors = validationResult(req);           // Събираме validation грешки от route.
+  const formData = req.body;                      // Данни от order формата.
+  formData.releaseRedirect = req.originalUrl;     // За redirect след release.
 
-  let car;
-  try {
-    car = await Car.findById(formData.carId);
-    if (!car) {
-      return res.status(404).send('Car not found');
-    }
-  } catch (err) {
-    console.error('Error loading car information.', err);
-    err.publicMessage = 'Error loading car information.';
-    return next(err);
+  const car = await Car.findById(formData.carId);// Търсим колата по ID.
+  if (!car) {
+    throw new NotFoundError('Car not found.');
   }
 
   if (!errors.isEmpty()) {
-    const message = errors.array()[0].msg;
+    const message = errors.array()[0].msg;        // Първата грешка за показ.
     return renderOrderPage(req, res, car, formData, message);
   }
 
-  const {
+  const {                                        // Валидираме датите чрез bookingValidation.
     isValid,
     errors: bookingErrors,
     startDate,
     endDate,
-    rentalDays,
   } = validateBookingDates({
     pickupDate: formData.pickupDate,
     returnDate: formData.returnDate,
@@ -74,169 +78,92 @@ exports.createCheckoutSession = async (req, res, next) => {
     return renderOrderPage(req, res, car, formData, message);
   }
 
-  const start = startDate;
+  const start = startDate;                        // Нормализирани Date обекти.
   const end = endDate;
 
-  const sessionId = getSessionId(req);
-  const now = new Date();
+  const sessionId = getSessionId(req);            // Session ID за reservation binding.
+  const now = new Date();                         // Текущо време за overlap проверки.
 
-  try {
-    const pricing = computeBookingPrice(
+  const pricing = computeBookingPrice(           // Изчисляваме цена server-side.
+    car,
+    start,
+    end,
+    formData.pickupLocation,
+    formData.returnLocation
+  );
+  if (!pricing || !Number.isFinite(pricing.totalPrice) || pricing.totalPrice <= 0) {
+    return renderOrderPage(
+      req,
+      res,
       car,
-      start,
-      end,
-      formData.pickupLocation,
-      formData.returnLocation
+      formData,
+      'Unable to calculate price for this rental. Please try again.',
     );
-    if (!pricing || !Number.isFinite(pricing.totalPrice) || pricing.totalPrice <= 0) {
+  }
+
+  const trimmedContact = normalizeContactDetails(formData); // Trim на contact полета.
+
+  let reservationDoc = await findActiveReservationBySession(req); // Активен hold за session.
+  if (reservationDoc) {
+    await reservationDoc.populate('carId', 'name');         // За име в banner.
+  }
+
+  let createdReservationThisStep = false;        // Флаг за compensation при Stripe fail.
+
+  if (reservationDoc) {                         // Има активна резервация – проверяваме съвпадение.
+    const sameCar =                               // Същата кола ли е?
+      String(reservationDoc.carId?._id || reservationDoc.carId) === String(car._id);
+    const sameStart =                             // Също начало?
+      reservationDoc.pickupDate instanceof Date &&
+      reservationDoc.pickupDate.getTime() === start.getTime();
+    const sameEnd =                               // Същ край?
+      reservationDoc.returnDate instanceof Date &&
+      reservationDoc.returnDate.getTime() === end.getTime();
+
+    if (!sameCar || !sameStart || !sameEnd) {    // Различен car/dates – показваме banner.
       return renderOrderPage(
         req,
         res,
         car,
         formData,
-        'Unable to calculate price for this rental. Please try again.',
+        'You already have an active reservation. Please complete or release it before starting another.',
+        {
+          existingReservation: buildExistingReservationSummary(reservationDoc),
+          rentalDays: pricing.rentalDays,
+          deliveryPrice: pricing.deliveryPrice,
+          returnPrice: pricing.returnPrice,
+          totalPrice: pricing.totalPrice,
+          releaseRedirect: req.originalUrl,
+        }
       );
     }
 
-    const trimmedContact = normalizeContactDetails(formData);
+    reservationDoc.fullName = trimmedContact.fullName;     // Обновяваме contact.
+    reservationDoc.phoneNumber = trimmedContact.phoneNumber;
+    reservationDoc.email = trimmedContact.email;
+    reservationDoc.address = trimmedContact.address;
+    reservationDoc.hotelName = trimmedContact.hotelName;
+    reservationDoc.rentalDays = pricing.rentalDays;       // Обновяваме pricing.
+    reservationDoc.deliveryPrice = pricing.deliveryPrice;
+    reservationDoc.returnPrice = pricing.returnPrice;
+    reservationDoc.totalPrice = pricing.totalPrice;
+    extendReservationHold(reservationDoc);                // Удължаваме hold.
+    reservationDoc.status = 'pending';
+  } else {                                                // Няма активна – търсим availability.
+    const { overlappingReservation, bookedOverlap } = await checkCarAvailabilityForRange({
+      carId: car._id,
+      startDate: start,
+      endDate: end,
+      now,
+    });
 
-    let reservationDoc = await findActiveReservationBySession(req);
-    if (reservationDoc) {
-      await reservationDoc.populate('carId', 'name');
-    }
-
-    let createdReservationThisStep = false;
-
-    if (reservationDoc) {
-      const sameCar =
-        String(reservationDoc.carId?._id || reservationDoc.carId) === String(car._id);
-      const sameStart =
-        reservationDoc.pickupDate instanceof Date &&
-        reservationDoc.pickupDate.getTime() === start.getTime();
-      const sameEnd =
-        reservationDoc.returnDate instanceof Date &&
-        reservationDoc.returnDate.getTime() === end.getTime();
-
-      if (!sameCar || !sameStart || !sameEnd) {
-        return renderOrderPage(
-          req,
-          res,
-          car,
-          formData,
-          'You already have an active reservation. Please complete or release it before starting another.',
-          {
-            existingReservation: buildExistingReservationSummary(reservationDoc),
-            rentalDays: pricing.rentalDays,
-            deliveryPrice: pricing.deliveryPrice,
-            returnPrice: pricing.returnPrice,
-            totalPrice: pricing.totalPrice,
-            releaseRedirect: req.originalUrl,
-          }
-        );
-      }
-
-      reservationDoc.fullName = trimmedContact.fullName;
-      reservationDoc.phoneNumber = trimmedContact.phoneNumber;
-      reservationDoc.email = trimmedContact.email;
-      reservationDoc.address = trimmedContact.address;
-      reservationDoc.hotelName = trimmedContact.hotelName;
-      reservationDoc.rentalDays = pricing.rentalDays;
-      reservationDoc.deliveryPrice = pricing.deliveryPrice;
-      reservationDoc.returnPrice = pricing.returnPrice;
-      reservationDoc.totalPrice = pricing.totalPrice;
-      extendReservationHold(reservationDoc);
-      reservationDoc.status = 'pending';
-    } else {
-      const { overlappingReservation, bookedOverlap } = await checkCarAvailabilityForRange({
-        carId: car._id,
-        startDate: start,
-        endDate: end,
-        now,
-      });
-
-      if (overlappingReservation) {
-        return renderOrderPage(
-          req,
-          res,
-          car,
-          formData,
-          'Selected car is already reserved in this period. Please choose different dates or a different car.',
-          {
-            rentalDays: pricing.rentalDays,
-            deliveryPrice: pricing.deliveryPrice,
-            returnPrice: pricing.returnPrice,
-            totalPrice: pricing.totalPrice,
-          }
-        );
-      }
-
-      if (bookedOverlap) {
-        return renderOrderPage(
-          req,
-          res,
-          car,
-          formData,
-          'Selected car is already booked in this period. Please choose different dates or a different car.',
-          {
-            rentalDays: pricing.rentalDays,
-            deliveryPrice: pricing.deliveryPrice,
-            returnPrice: pricing.returnPrice,
-            totalPrice: pricing.totalPrice,
-          }
-        );
-      }
-
-      reservationDoc = await createPendingReservation({
-        carId: car._id,
-        sessionId,
-        startDate: start,
-        endDate: end,
-        pickupTime: formData.pickupTime,
-        returnTime: formData.returnTime,
-        pickupLocation: formData.pickupLocation,
-        returnLocation: formData.returnLocation,
-        pricing,
-        contact: trimmedContact,
-      });
-      createdReservationThisStep = true;
-    }
-
-    let stripeSession;
-    try {
-      stripeSession = await stripe.checkout.sessions.create({
-        payment_method_types: ['card'],
-        line_items: [
-          {
-            price_data: {
-              currency: 'eur',
-              product_data: { name: `Car Rental – ${car.name}` },
-              unit_amount: Math.round(Number(pricing.totalPrice) * 100),
-            },
-            quantity: 1,
-          },
-        ],
-        mode: 'payment',
-        success_url: `${req.protocol}://${req.get('host')}/success?session_id={CHECKOUT_SESSION_ID}`,
-        cancel_url: `${req.protocol}://${req.get('host')}/cancel?session_id={CHECKOUT_SESSION_ID}`,
-      });
-    } catch (err) {
-      console.error('Stripe session creation failed:', err);
-      if (createdReservationThisStep) {
-        await Reservation.findByIdAndUpdate(reservationDoc._id, {
-          status: 'cancelled',
-          holdExpiresAt: new Date(),
-        });
-      } else {
-        reservationDoc.status = 'cancelled';
-        reservationDoc.holdExpiresAt = new Date();
-        await reservationDoc.save();
-      }
+    if (overlappingReservation) {                // Друга активна резервация overlap-ва.
       return renderOrderPage(
         req,
         res,
         car,
         formData,
-        'Unable to start payment. Please try again in a minute.',
+        'Selected car is already reserved in this period. Please choose different dates or a different car.',
         {
           rentalDays: pricing.rentalDays,
           deliveryPrice: pricing.deliveryPrice,
@@ -246,100 +173,179 @@ exports.createCheckoutSession = async (req, res, next) => {
       );
     }
 
-    reservationDoc.stripeSessionId = stripeSession.id;
-    reservationDoc.status = 'processing';
-    await reservationDoc.save();
+    if (bookedOverlap) {                         // Car.dates вече има booked период.
+      return renderOrderPage(
+        req,
+        res,
+        car,
+        formData,
+        'Selected car is already booked in this period. Please choose different dates or a different car.',
+        {
+          rentalDays: pricing.rentalDays,
+          deliveryPrice: pricing.deliveryPrice,
+          returnPrice: pricing.returnPrice,
+          totalPrice: pricing.totalPrice,
+        }
+      );
+    }
 
-    res.redirect(303, stripeSession.url);
-  } catch (err) {
-    console.error('Error processing checkout.', err);
-    err.publicMessage = 'Error processing checkout.';
-    return next(err);
+    reservationDoc = await createPendingReservation({     // Създаваме нов pending hold.
+      carId: car._id,
+      sessionId,
+      startDate: start,
+      endDate: end,
+      pickupTime: formData.pickupTime,
+      returnTime: formData.returnTime,
+      pickupLocation: formData.pickupLocation,
+      returnLocation: formData.returnLocation,
+      pricing,
+      contact: trimmedContact,
+    });
+    createdReservationThisStep = true;           // За compensation при Stripe fail.
   }
-};
 
-exports.handleCheckoutSuccess = async (req, res, next) => {
+  let stripeSession;
+  try {                                          // Опит за създаване на Stripe session.
+    stripeSession = await stripe.checkout.sessions.create({
+      payment_method_types: ['card'],
+      line_items: [
+        {
+          price_data: {
+            currency: 'eur',
+            product_data: { name: `Car Rental – ${car.name}` },
+            unit_amount: Math.round(Number(pricing.totalPrice) * 100),
+          },
+          quantity: 1,
+        },
+      ],
+      mode: 'payment',
+      success_url: `${req.protocol}://${req.get('host')}/success?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${req.protocol}://${req.get('host')}/cancel?session_id={CHECKOUT_SESSION_ID}`,
+    });
+  } catch (err) {                               // Stripe API fail – compensation.
+    console.error('Stripe session creation failed:', {
+      correlationId: req.correlationId,
+      message: err.message,
+    });
+
+    if (createdReservationThisStep) {            // Ако току-що създадохме – отменяме.
+      await Reservation.findByIdAndUpdate(reservationDoc._id, {
+        status: 'cancelled',
+        holdExpiresAt: new Date(),
+      });
+    } else {                                    // Иначе обновяваме съществуващата.
+      reservationDoc.status = 'cancelled';
+      reservationDoc.holdExpiresAt = new Date();
+      await reservationDoc.save();
+    }
+
+    return renderOrderPage(                      // Re-render с съобщение за грешка.
+      req,
+      res,
+      car,
+      formData,
+      'Unable to start payment. Please try again in a minute.',
+      {
+        rentalDays: pricing.rentalDays,
+        deliveryPrice: pricing.deliveryPrice,
+        returnPrice: pricing.returnPrice,
+        totalPrice: pricing.totalPrice,
+      }
+    );
+  }
+
+  reservationDoc.stripeSessionId = stripeSession.id;  // Свързваме с Stripe session.
+  reservationDoc.status = 'processing';               // Преди redirect.
+
+  try {
+    await reservationDoc.save();                      // Запис – при fail хвърляме.
+  } catch (err) {
+    throw new ExternalServiceError(
+      'Payment was prepared, but the reservation state could not be saved safely.',
+      { reservationId: reservationDoc._id.toString() },
+      { isOperational: false }
+    );
+  }
+
+  return res.redirect(303, stripeSession.url);   // 303 See Other към Stripe checkout.
+});
+
+function renderSuccessPage(res, title) {
+  res.set('Cache-Control', 'private, no-store, no-cache, must-revalidate');
+  res.set('Pragma', 'no-cache');
+  return res.render('success', { title });
+}
+
+// handleCheckoutSuccess – опит за финализация; webhook е authoritative.
+exports.handleCheckoutSuccess = asyncHandler(async (req, res) => {
   console.log('💥 /success HIT');
 
-  const stripeSessionId = req.query.session_id;
+  const stripeSessionId = req.query.session_id;  // Stripe добавя в URL.
   if (!stripeSessionId) {
-    console.error('❌ /success called without session_id in query');
-    return res.status(400).send('Invalid checkout session.');
+    throw new ValidationError('Invalid checkout session.');
   }
 
   try {
-    let result;
-    try {
-      result = await finalizeReservationByStripeSessionId(stripeSessionId);
-    } catch (err) {
-      console.error('❌ Error finalizing reservation in /success handler:', err);
-      return res.render('success', { title: 'Payment Processing' });
-    }
+    const result = await finalizeReservationByStripeSessionId(stripeSessionId, {
+      logPrefix: `🟢 [CheckoutSuccess][${req.correlationId}]`,
+    });
 
     console.log('🔎 Reservation found for this session?', !!result?.reservation);
 
     if (!result.found) {
       console.warn('⚠️ No reservation found for stripeSessionId in /success:', stripeSessionId);
-      // Показваме success, за да не плаши клиента, но логваме проблема
-      return res.render('success', { title: 'Payment Success' });
+      return renderSuccessPage(res, 'Payment Success');
     }
 
-    if (!result.finalized && result.reservation?.status === 'confirmed') {
-      console.log(
-        'ℹ️ Reservation already confirmed in /success:',
-        result.reservation._id.toString()
-      );
-      return res.render('success', { title: 'Payment Success' });
-    }
-
-    // 5) Показваме success страница
-    return res.render('success', { title: 'Payment Success' });
+    return renderSuccessPage(res, 'Payment Success');
   } catch (err) {
-    console.error('Success handler error:', err);
-    err.publicMessage = 'Could not load booking status.';
-    return next(err);
+    console.error('❌ Error finalizing reservation in /success handler:', {
+      correlationId: req.correlationId,
+      message: err.message,
+    });
+    return renderSuccessPage(res, 'Payment Processing');
   }
-};
+});
 
-
-exports.handleCheckoutCancel = async (req, res) => {
-    try {
+// handleCheckoutCancel – освобождава резервация при отказ.
+exports.handleCheckoutCancel = asyncHandler(async (req, res) => {
+  try {
     await releaseActiveReservationForSession(req);
-    } catch (err) {
-      console.error('Cancel handler error:', err);
+  } catch (err) {
+    console.error('Cancel handler error:', {
+      correlationId: req.correlationId,
+      message: err.message,
+    });
   }
 
-  res.send('Payment cancelled. You can start a new reservation when ready.');
-};
+  return res.send('Payment cancelled. You can start a new reservation when ready.');
+});
 
-
-
-exports.handleStripeWebhook = async (req, res) => {
+// handleStripeWebhook – валидира подпис, обработва checkout.session.completed.
+exports.handleStripeWebhook = asyncHandler(async (req, res) => {
   const logPrefix = '🌐 [StripeWebhook]';
   console.log('════════════════════════════════════════════════════');
   console.log(
     `${logPrefix} HIT @ ${new Date().toISOString()} ${req.method} ${req.originalUrl}`
   );
-  // Do not log req.headers (contains cookie, user-agent, etc.)
-  const sig = req.headers['stripe-signature'];
+  const sig = req.headers['stripe-signature'];   // Подпис за верификация.
   let event;
 
   try {
-    // req.body тук е Buffer, защото маршрутът в server.js е с express.raw() — нужен е за проверка на подписа
-    event = stripe.webhooks.constructEvent(
+    event = stripe.webhooks.constructEvent(     // Верификация на подписа.
       req.body,
       sig,
       process.env.STRIPE_WEBHOOK_SECRET
     );
   } catch (err) {
     console.error(`${logPrefix} ❌ Webhook signature verification failed:`, err.message);
-    return res.status(400).send(`Webhook Error: ${err.message}`);
+    throw new ValidationError('Webhook signature verification failed.');
   }
 
   console.log(`${logPrefix} Parsed event type: ${event.type}`, event.id ? `id=${event.id}` : '');
 
-  if (event.type === 'checkout.session.completed') {
-    const session = event.data && event.data.object;
+  if (event.type === 'checkout.session.completed') {  // Единственият обработван тип.
+    const session = event.data && event.data.object;  // Checkout session обект.
     if (!session || !session.id) {
       console.error(`${logPrefix} ❌ Webhook session missing id.`);
       return res.status(200).json({ received: true });
@@ -348,52 +354,35 @@ exports.handleStripeWebhook = async (req, res) => {
     const stripeSessionId = session.id;
     console.log(`${logPrefix} checkout.session.completed for session ${stripeSessionId}`);
 
-    // ——— Идемпотентност по event.id ———
-    // Опит за запис на този event в ProcessedStripeEvent. Ако event вече е бил обработен
-    // (напр. Stripe retry), insert ще върне duplicate key (11000) и пропускаме финализацията.
-    try {
-      await ProcessedStripeEvent.create({
-        eventId: event.id,
-        stripeSessionId,
-        processedAt: new Date(),
-      });
-    } catch (err) {
-      if (err.code === 11000) {
-        console.log(`${logPrefix} ℹ️ Event ${event.id} already processed (duplicate key), skipping`);
-        return res.status(200).json({ received: true });
-      }
-      throw err;
+    const result = await processStripeWebhookEvent({
+      eventId: event.id,
+      stripeSessionId,
+      logPrefix: `${logPrefix}[${req.correlationId}]`,
+    });
+
+    if (result?.reason === 'duplicate_event') {
+      console.log(`${logPrefix} ℹ️ Event ${event.id} already processed, skipping`);
+      return res.status(200).json({ received: true });
     }
 
-    try {
-      const result = await finalizeReservationByStripeSessionId(stripeSessionId, {
-        logPrefix,
-        requireActiveStatus: true,
-      });
+    console.log(`${logPrefix} Reservation lookup result:`, !!result?.reservation);
 
-      console.log(`${logPrefix} Reservation lookup result:`, !!result?.reservation);
+    if (!result?.found) {
+      console.warn(`${logPrefix} ⚠️ No reservation for stripeSessionId ${stripeSessionId}`);
+      return res.status(200).json({ received: true });
+    }
 
-      if (!result.found) {
-        console.warn(
-          `${logPrefix} ⚠️ No reservation for stripeSessionId ${stripeSessionId}`
-        );
-        return res.status(200).json({ received: true });
-      }
-
-      if (result.reason === 'status_not_active' && result.reservation) {
-        console.warn(
-          `${logPrefix} ⚠️ Reservation status is not active`,
-          result.reservation._id.toString(),
-          'status=',
-          result.reservation.status
-        );
-        return res.status(200).json({ received: true });
-      }
-    } catch (err) {
-      console.error(`${logPrefix} ❌ Error inside webhook handler:`, err);
+    if (result.reason === 'status_not_active' && result.reservation) {
+      console.warn(
+        `${logPrefix} ⚠️ Reservation status is not active`,
+        result.reservation._id.toString(),
+        'status=',
+        result.reservation.status
+      );
+      return res.status(200).json({ received: true });
     }
   }
 
   console.log(`${logPrefix} Responding 200 { received: true }`);
   return res.status(200).json({ received: true });
-};
+});
