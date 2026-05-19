@@ -1,3 +1,4 @@
+// Плоски такси за доставка/връщане за всяка поддържана локация.
 const FEES = {
   office: 0,
   'sunny-beach': 25,
@@ -14,8 +15,8 @@ const FEES = {
   ravda: 20,
 };
 
+// Връща конфигурираната такса за локация; при непозната локация – 0.
 const feeFor = (loc) => FEES[loc] ?? 0;
 
+// Експорт на raw fee map и helper accessor.
 module.exports = { FEES, feeFor };
-
-

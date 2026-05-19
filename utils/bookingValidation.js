@@ -1,13 +1,16 @@
+// Timezone-aware parser за booking dates/times в бизнес timezone.
 const { parseSofiaDate } = require('./timeZone');
 
+// Споделена константа за rental-day изчисления.
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 /**
- * Compute rental days between two Date objects.
- * - Minimum 1 day
- * - Uses ceil on the difference in days
+ * Изчислява rental days между два Date обекта.
+ * - Минимум 1 ден
+ * - Използва ceil върху разликата в дни
  */
 function computeRentalDays(startDate, endDate) {
+  // И двата аргумента трябва да са валидни Date преди аритметика.
   if (
     !(startDate instanceof Date) ||
     Number.isNaN(startDate.getTime()) ||
@@ -17,33 +20,28 @@ function computeRentalDays(startDate, endDate) {
     throw new Error('Invalid dates passed to computeRentalDays');
   }
 
+  // Изчисляваме суровата разлика в милисекунди.
   const diffMs = endDate.getTime() - startDate.getTime();
+  // Закръгляме нагоре до пълни дни и поне 1 ден.
   const days = Math.ceil(diffMs / MS_PER_DAY);
   return Math.max(1, days);
 }
 
 /**
- * Validate and normalize booking dates coming from the UI.
+ * Валидира и нормализира booking dates от UI.
  *
- * Inputs:
- * - pickupDate, returnDate: strings from form (e.g. "2025-11-28")
- * - pickupTime, returnTime: optional time strings ("HH:MM"), with sensible defaults
- * - now: optional Date for "current time", default = new Date()
+ * Входи:
+ * - pickupDate, returnDate: низове от форма (напр. "2025-11-28")
+ * - pickupTime, returnTime: опционални time низове ("HH:MM"), с разумни defaults
+ * - now: опционален Date за "текущо време", default = new Date()
  *
- * Behavior:
- * - Allow "today", but not dates strictly before "today".
- * - Ensure return >= pickup (if your current controllers require at least 1 day,
- *   keep the same logic here – do NOT relax restrictions).
- * - Use parseSofiaDate so all comparisons are in Europe/Sofia timezone.
+ * Поведение:
+ * - Позволява "днес", но не и дати преди "днес".
+ * - return >= pickup (при нужда от поне 1 ден – същата логика).
+ * - Използва parseSofiaDate за всички сравнения в Europe/Sofia.
  *
- * Return shape:
- * {
- *   isValid: boolean,
- *   errors: string[],
- *   startDate: Date | null,
- *   endDate: Date | null,
- *   rentalDays: number | null
- * }
+ * Връща:
+ * { isValid, errors, startDate, endDate, rentalDays }
  */
 function validateBookingDates({
   pickupDate,
@@ -52,12 +50,14 @@ function validateBookingDates({
   returnTime = '23:59',
   now = new Date(),
 }) {
+  // Събираме всички validation съобщения за callers да решат какво да покажат.
   const errors = [];
 
-  // Parse dates using the existing timezone helper
+  // Парсваме датите с timezone helper-а – сравненията са в Sofia timezone.
   const start = parseSofiaDate(pickupDate, pickupTime);
   const end = parseSofiaDate(returnDate, returnTime);
 
+  // При неуспешен parse – веднага връщаме format грешка.
   if (
     !start ||
     Number.isNaN(start.getTime()) ||
@@ -74,19 +74,20 @@ function validateBookingDates({
     };
   }
 
-  // "today" in Europe/Sofia – approximate via the local date of "now"
+  // "днес" в Europe/Sofia – приближение чрез local date на "now".
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 
+  // Отхвърляме pickup/return дати които са вече в миналото.
   if (start < today || end < today) {
     errors.push('Pick-up and return dates cannot be in the past.');
   }
 
-  // Keep behavior consistent with the existing code:
-  // enforce at least one full day – end must be strictly after start.
+  // Поддържаме същата логика: поне един пълен ден – end трябва да е строго след start.
   if (end <= start) {
     errors.push('Return date must be after pick-up date.');
   }
 
+  // Връщаме нормализираните дати дори при грешка – callers могат да ги инспектират.
   if (errors.length > 0) {
     return {
       isValid: false,
@@ -97,8 +98,10 @@ function validateBookingDates({
     };
   }
 
+  // При успех – изчисляваме rental days от нормализираните дати.
   const rentalDays = computeRentalDays(start, end);
 
+  // Връщаме успешната форма използвана в controllers/services.
   return {
     isValid: true,
     errors: [],
@@ -108,10 +111,9 @@ function validateBookingDates({
   };
 }
 
+// Експорт на validation helpers.
 module.exports = {
   MS_PER_DAY,
   computeRentalDays,
   validateBookingDates,
 };
-
-
