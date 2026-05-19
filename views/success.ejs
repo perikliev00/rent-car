@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="refresh" content="4;url=/">
     <title><%= title %></title>
     <style>
         body {
@@ -67,19 +68,6 @@
         </p>
     </div>
 
-    <script>
-        let timeLeft = 4;
-        const countdownElement = document.getElementById('countdown');
-        
-        const timer = setInterval(() => {
-            timeLeft--;
-            countdownElement.textContent = timeLeft;
-            
-            if (timeLeft <= 0) {
-                clearInterval(timer);
-                window.location.href = '/';
-            }
-        }, 1000);
-    </script>
+    <script src="/js/successRedirect.js"></script>
 </body>
 </html>
