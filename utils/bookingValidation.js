@@ -27,22 +27,6 @@ function computeRentalDays(startDate, endDate) {
   return Math.max(1, days);
 }
 
-/**
- * Валидира и нормализира booking dates от UI.
- *
- * Входи:
- * - pickupDate, returnDate: низове от форма (напр. "2025-11-28")
- * - pickupTime, returnTime: опционални time низове ("HH:MM"), с разумни defaults
- * - now: опционален Date за "текущо време", default = new Date()
- *
- * Поведение:
- * - Позволява "днес", но не и дати преди "днес".
- * - return >= pickup (при нужда от поне 1 ден – същата логика).
- * - Използва parseSofiaDate за всички сравнения в Europe/Sofia.
- *
- * Връща:
- * { isValid, errors, startDate, endDate, rentalDays }
- */
 function validateBookingDates({
   pickupDate,
   returnDate,
@@ -72,6 +56,9 @@ function validateBookingDates({
       endDate: null,
       rentalDays: null,
     };
+  }
+  if (start <= now) {
+    errors.push('Pick-up time must be later than the current time today');
   }
 
   // "днес" в Europe/Sofia – приближение чрез local date на "now".

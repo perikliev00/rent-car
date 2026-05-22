@@ -1,26 +1,36 @@
+// validationResult – route-level validation грешки за admin car форми.
 const { validationResult } = require('express-validator');
+// dashboardService – admin dashboard данни.
 const dashboardService = require('../services/admin/dashboardService');
+// orderAdminService – admin order CRUD и transaction логика.
 const orderAdminService = require('../services/admin/orderAdminService');
+// carAdminService – admin fleet CRUD логика.
 const carAdminService = require('../services/admin/carAdminService');
 
+// Render на admin dashboard със summary stats и orders.
 exports.getAdminDashboard = async (req, res, next) => {
     try {
+        // Ask the service layer to fetch dashboard metrics and backing order data.
         const { orders, stats } = await dashboardService.getDashboardData();
 
+        // Render the dashboard template with the service result.
         res.render('admin/dashboard', {
             title: 'Admin Dashboard',
             orders,
             stats
         });
     } catch (err) {
+        // Unexpected dashboard failures go through the central error handler.
         console.error('Admin dashboard error:', err);
         err.publicMessage = 'Error loading admin dashboard.';
         return next(err);
     }
 };
 
+// Render the main admin order list page.
 exports.getAllOrders = async (req, res, next) => {
     try {
+        // Query-string filters are passed through to the order admin service.
         const data = await orderAdminService.getOrdersList(req.query);
 
         res.render('admin/orders', {
@@ -28,12 +38,14 @@ exports.getAllOrders = async (req, res, next) => {
             ...data
         });
     } catch (err) {
+        // Bubble the failure to the global handler with a friendly public message.
         console.error('Get orders error:', err);
         err.publicMessage = 'Error fetching orders.';
         return next(err);
     }
 };
 
+// Render the expired-orders list.
 exports.getExpiredOrders = async (req, res, next) => {
     try {
         const data = await orderAdminService.getExpiredOrders();
@@ -49,6 +61,7 @@ exports.getExpiredOrders = async (req, res, next) => {
     }
 };
 
+// Render the deleted-orders bin.
 exports.getDeletedOrders = async (req, res, next) => {
     try {
         const data = await orderAdminService.getDeletedOrders();
@@ -65,6 +78,7 @@ exports.getDeletedOrders = async (req, res, next) => {
     }
 };
 
+// Permanently empty the deleted-orders bin.
 exports.postEmptyDeletedOrders = async (_req, res, next) => {
     try {
         await orderAdminService.emptyDeletedOrders();
@@ -76,6 +90,7 @@ exports.postEmptyDeletedOrders = async (_req, res, next) => {
     }
 };
 
+// Render the create-order admin form.
 exports.getCreateOrder = async (req, res, next) => {
     try {
         const data = await orderAdminService.getCreateOrderForm();
@@ -91,12 +106,14 @@ exports.getCreateOrder = async (req, res, next) => {
 };
 
 // JSON endpoint: check if a car is available for the given period (read-only)
+// Return availability info for a selected car/date range to power admin form UX.
 exports.getCarAvailability = async (req, res) => {
   try {
     const result = await orderAdminService.getCarAvailability(
       req.params.id,
       req.query
     );
+    // The service returns both status and body so the controller can stay very thin.
     return res.status(result.status).json(result.body);
   } catch (err) {
     console.error('getCarAvailability error:', err);
@@ -104,13 +121,16 @@ exports.getCarAvailability = async (req, res) => {
   }
 };
 
+// Create a new admin-side order after service-layer validation/business rules run.
 exports.postCreateOrder = async (req, res, next) => {
     try {
         const result = await orderAdminService.createOrder(req.body);
+        // Success redirects back to the main order list.
         if (result.success) {
             return res.redirect('/admin/orders');
         }
 
+        // Validation/business-rule failures re-render the form with the service-generated view model.
         return res.status(result.status).render('admin/order-new', {
                 title: 'Add Order',
             ...result.viewModel
@@ -122,9 +142,11 @@ exports.postCreateOrder = async (req, res, next) => {
     }
 };
 
+// Render the details page for a single order.
 exports.getOrderDetails = async (req, res, next) => {
     try {
         const order = await orderAdminService.getOrderDetails(req.params.id);
+        // Missing orders are handled locally with a 404 text response.
         if (!order) return res.status(404).send('Order not found');
         res.render('admin/order-view', {
             title: 'Order Details',
@@ -137,9 +159,11 @@ exports.getOrderDetails = async (req, res, next) => {
     }
 };
 
+// Render the edit form for a single order.
 exports.getEditOrder = async (req, res, next) => {
     try {
         const data = await orderAdminService.getOrderEditData(req.params.id);
+        // Missing orders are handled locally.
         if (!data) return res.status(404).send('Order not found');
         res.render('admin/order-edit', {
             title: 'Edit Order',
@@ -152,15 +176,18 @@ exports.getEditOrder = async (req, res, next) => {
     }
 };
 
+// Save admin-side edits to an order.
 exports.postEditOrder = async (req, res, next) => {
     try {
         const result = await orderAdminService.updateOrder(
             req.params.id,
             req.body
         );
+        // Success returns to the order list.
         if (result.success) {
             return res.redirect('/admin/orders');
         }
+        // Validation/business errors re-render the form with service-computed state.
         return res.status(result.status).render('admin/order-edit', {
             title: 'Edit Order',
             ...result.viewModel
@@ -172,6 +199,7 @@ exports.postEditOrder = async (req, res, next) => {
     }
 };
 
+// Soft-delete an order from the admin list.
 exports.postDeleteOrder = async (req, res, next) => {
     try {
         await orderAdminService.deleteOrder(req.params.id);
@@ -183,12 +211,14 @@ exports.postDeleteOrder = async (req, res, next) => {
     }
 };
 
+// Restore a soft-deleted order from the admin bin.
 exports.postRestoreOrder = async (req, res, next) => {
     try {
         await orderAdminService.restoreOrder(req.params.id);
         res.redirect('/admin/orders');
     } catch (err) {
         console.error('Restore order error:', err);
+        // Restore errors with a domain-specific flag are redirected back to the deleted list with a query message.
         if (err && err.isOrderRestoreError) {
             const message = err.message || 'Error restoring order';
           return res.redirect(`/admin/orders/deleted?err=${encodeURIComponent(message)}`);
@@ -199,6 +229,7 @@ exports.postRestoreOrder = async (req, res, next) => {
 };
 
 // -------- Cars CRUD (basic scaffolding, no complex logic) --------
+// Render the admin fleet list page.
 exports.listCars = async (req, res, next) => {
     try {
         const cars = await carAdminService.listCars();
@@ -210,10 +241,12 @@ exports.listCars = async (req, res, next) => {
     }
 };
 
+// Render the blank admin create-car form.
 exports.getCreateCar = async (req, res) => {
     res.render('admin/car-form', { title: 'Add Car', car: null });
 };
 
+// Persist a newly created car from the admin form.
 exports.postCreateCar = async (req, res, next) => {
     try {
         // Check for multer file validation errors first
@@ -224,6 +257,7 @@ exports.postCreateCar = async (req, res, next) => {
                 errors: [{ msg: req.fileValidationError, param: 'image', location: 'body' }]
             });
         }
+        // Read express-validator errors produced at the route layer.
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
             return res.status(422).render('admin/car-form', {
@@ -232,6 +266,7 @@ exports.postCreateCar = async (req, res, next) => {
                 errors: errors.array()
             });
         }
+        // Delegate actual persistence to the service layer.
         await carAdminService.createCar(req.body, req.file);
         res.redirect('/admin/cars');
     } catch (err) {
@@ -258,6 +293,7 @@ exports.postCreateCar = async (req, res, next) => {
     }
 };
 
+// Render the edit-car form.
 exports.getEditCar = async (req, res, next) => {
     try {
         const car = await carAdminService.getCarById(req.params.id);
@@ -270,6 +306,7 @@ exports.getEditCar = async (req, res, next) => {
     }
 };
 
+// Save edits to an existing car.
 exports.postEditCar = async (req, res, next) => {
     try {
         // Check for multer file validation errors first
@@ -281,6 +318,7 @@ exports.postEditCar = async (req, res, next) => {
                 errors: [{ msg: req.fileValidationError, param: 'image', location: 'body' }]
             });
         }
+        // Read express-validator failures produced by the route.
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
             const car = await carAdminService.getCarById(req.params.id);
@@ -290,6 +328,7 @@ exports.postEditCar = async (req, res, next) => {
                 errors: errors.array()
             });
         }
+        // Delegate the actual update to the admin car service.
         await carAdminService.updateCar(req.params.id, req.body, req.file);
         res.redirect('/admin/cars');
     } catch (err) {
@@ -333,6 +372,7 @@ exports.postEditCar = async (req, res, next) => {
     }
 };
 
+// Delete a car from the fleet.
 exports.postDeleteCar = async (req, res, next) => {
     try {
         await carAdminService.deleteCar(req.params.id);

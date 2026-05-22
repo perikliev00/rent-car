@@ -1,3 +1,4 @@
+// Car model – зарежда избраната кола преди order page.
 const Car = require('../models/Car');
 const { computeBookingPrice } = require('../utils/pricing');
 const { formatDateForDisplay, formatLocationName } = require('../utils/dateFormatter');
@@ -16,6 +17,7 @@ const {
   buildOrderViewModel,
 } = require('../services/orderViewModelService');
 
+// Подготвя и render-ва order page за избрана кола и date/location комбинация.
 module.exports.getOrderCar = async (req, res, next) => {
   try {
     const {
@@ -25,10 +27,10 @@ module.exports.getOrderCar = async (req, res, next) => {
       'return-location': returnLocation,
       'pickup-time': pickupTime,
       'return-time': returnTime,
-      'rental-days': rentalDaysFromForm, // ignored for pricing
-      'delivery-price': deliveryPriceFromForm, // ignored
-      'return-price': returnPriceFromForm, // ignored
-      'total-price': totalPriceFromForm, // ignored
+      'rental-days': rentalDaysFromForm,
+      'delivery-price': deliveryPriceFromForm,
+      'return-price': returnPriceFromForm,
+      'total-price': totalPriceFromForm,
       carId,
     } = req.body || {};
 
@@ -36,7 +38,7 @@ module.exports.getOrderCar = async (req, res, next) => {
       return res.status(400).send('Car not specified.');
     }
 
-    const car = await Car.findById(carId);
+    const car = await Car.findById(carId);  // Зареждаме колата от БД.
     if (!car) {
       return res.status(404).send('Car not found.');
     }
@@ -47,7 +49,7 @@ module.exports.getOrderCar = async (req, res, next) => {
       startDate,
       endDate,
       rentalDays,
-    } = validateBookingDates({
+    } = validateBookingDates({  // Валидираме и нормализираме датите.
       pickupDate: pickupDateISO,
       returnDate: returnDateISO,
       pickupTime: pickupTime || '00:00',
@@ -61,7 +63,7 @@ module.exports.getOrderCar = async (req, res, next) => {
     const start = startDate;
     const end = endDate;
 
-    const pricing = computeBookingPrice(car, start, end, pickupLocation, returnLocation);
+    const pricing = computeBookingPrice(car, start, end, pickupLocation, returnLocation);  // Изчисляваме цена.
     if (!pricing || !Number.isFinite(pricing.totalPrice) || pricing.totalPrice <= 0) {
       return res.status(400).send('Unable to calculate price for this rental. Please try again.');
     }
@@ -94,7 +96,6 @@ module.exports.getOrderCar = async (req, res, next) => {
         existingReservation: overrides.existingReservation ?? null,
       });
 
-      // Use CSRF token prepared by route-level middleware
       if (res.locals && res.locals.csrfToken) {
         viewModel.csrfToken = res.locals.csrfToken;
       }
@@ -102,14 +103,8 @@ module.exports.getOrderCar = async (req, res, next) => {
       return res.status(status).render('orderMain', viewModel);
     };
 
-    let existingForSession = await findActiveReservationBySession(req);
+    let existingForSession = await findActiveReservationBySession(req);  // Има ли активна резервация за този session?
     if (existingForSession) {
-      // ✅ New logic:
-      // If the user is in the same session and the active reservation has EXACTLY the same parameters
-      // (same car, same pickup/return dates and times, same pickup/return locations),
-      // then DO NOT show the red banner and DO NOT create a new reservation.
-      // Simply render the page normally as if the same reservation is still active.
-
       const sameReservationParams =
         String(existingForSession.carId) === String(car._id) &&
         existingForSession.pickupDate?.getTime?.() === start.getTime() &&
@@ -120,11 +115,9 @@ module.exports.getOrderCar = async (req, res, next) => {
         existingForSession.returnLocation === returnLocation;
 
       if (sameReservationParams) {
-        // Render the order page normally, without the red banner and without creating a new record
         return renderOrderPage({ message: null, existingReservation: null });
       }
 
-      // Otherwise keep the default behavior (show the active reservation banner)
       await existingForSession.populate('carId', 'name');
       return renderOrderPage({
         message:
@@ -133,7 +126,7 @@ module.exports.getOrderCar = async (req, res, next) => {
       });
     }
 
-    const { overlappingReservation, bookedOverlap } = await checkCarAvailabilityForRange({
+    const { overlappingReservation, bookedOverlap } = await checkCarAvailabilityForRange({  // Проверка за конфликти.
       carId: car._id,
       startDate: start,
       endDate: end,
@@ -162,7 +155,6 @@ module.exports.getOrderCar = async (req, res, next) => {
       pickupLocation,
       returnLocation,
       pricing,
-      // no contact provided here – defaults to empty strings
     });
 
     return renderOrderPage({ message: null, existingReservation: null });

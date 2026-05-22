@@ -1,15 +1,11 @@
-// Support pages controller
+// Support controller – support страници и chat JSON APIs.
 const Car = require('../models/Car');
 const { FEES } = require('../utils/fees');
 const { validationResult } = require('express-validator');
 
-
-// Get phone support page
 exports.getPhoneSupport = async (req, res, next) => {
   try {
-    res.render('phone-support', {
-      title: 'Phone Support - Rent A Car'
-    });
+    res.render('phone-support', { title: 'Phone Support - Rent A Car' });
   } catch (err) {
     console.error('getPhoneSupport error:', err);
     err.publicMessage = 'Error loading phone support page.';
@@ -17,12 +13,9 @@ exports.getPhoneSupport = async (req, res, next) => {
   }
 };
 
-// Get visit location page
 exports.getVisitLocation = async (req, res, next) => {
   try {
-    res.render('visit-location', {
-      title: 'Visit Our Location - Rent A Car'
-    });
+    res.render('visit-location', { title: 'Visit Our Location - Rent A Car' });
   } catch (err) {
     console.error('getVisitLocation error:', err);
     err.publicMessage = 'Error loading visit location page.';
@@ -30,12 +23,9 @@ exports.getVisitLocation = async (req, res, next) => {
   }
 };
 
-// Get live chat page
 exports.getLiveChat = async (req, res, next) => {
   try {
-    res.render('live-chat', {
-      title: 'Live Chat Support - Rent A Car'
-    });
+    res.render('live-chat', { title: 'Live Chat Support - Rent A Car' });
   } catch (err) {
     console.error('getLiveChat error:', err);
     err.publicMessage = 'Error loading live chat page.';
@@ -43,15 +33,11 @@ exports.getLiveChat = async (req, res, next) => {
   }
 };
 
-// ============================================
-// Chat API Endpoints
-// ============================================
-
-// GET /api/chat/cars-summary
+// GET /api/chat/cars-summary – aggregate metadata за налични коли (support/chat UI).
 exports.getCarsSummary = async (req, res, next) => {
   try {
     const cars = await Car.find({ availability: true }).lean();
-    
+
     if (!cars || cars.length === 0) {
       return res.json({
         totalCars: 0,
@@ -67,12 +53,10 @@ exports.getCarsSummary = async (req, res, next) => {
       });
     }
 
-    // Extract unique values
     const fuelTypes = [...new Set(cars.map(c => c.fuelType).filter(Boolean))].sort();
     const transmissions = [...new Set(cars.map(c => c.transmission).filter(Boolean))].sort();
     const seatOptions = [...new Set(cars.map(c => c.seats).filter(Boolean))].sort((a, b) => a - b);
 
-    // Calculate price ranges
     const prices = cars.map(c => c.price || 0).filter(p => p > 0);
     const tier1_3Prices = cars.map(c => c.priceTier_1_3 || c.price || 0).filter(p => p > 0);
     const tier7_31Prices = cars.map(c => c.priceTier_7_31 || c.price || 0).filter(p => p > 0);
@@ -101,7 +85,7 @@ exports.getCarsSummary = async (req, res, next) => {
   }
 };
 
-// GET /api/chat/cars-by-filter
+// GET /api/chat/cars-by-filter – филтриран списък коли по support/chat параметри.
 exports.getCarsByFilter = async (req, res, next) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
@@ -136,7 +120,7 @@ exports.getCarsByFilter = async (req, res, next) => {
   }
 };
 
-// GET /api/chat/pricing-info
+// GET /api/chat/pricing-info – такси и price-tier етикети за support/chat.
 exports.getPricingInfo = async (req, res, next) => {
   try {
     res.json({
@@ -154,7 +138,7 @@ exports.getPricingInfo = async (req, res, next) => {
   }
 };
 
-// GET /api/chat/car-details/:carId
+// GET /api/chat/car-details/:carId – детайли за една кола.
 exports.getCarDetails = async (req, res, next) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {

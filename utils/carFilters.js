@@ -129,7 +129,7 @@ function filterCarsByComputedUnitPrice(cars, criteria) {
     return cars;
   }
   return cars.filter((car) => {
-    const unit = Number(car.nitPurice ?? car.price);
+    const unit = Number(car.unitPrice ?? car.price);
     if (criteria.priceMin !== undefined && (!Number.isFinite(unit) || unit < criteria.priceMin)) {
       return false;
     }

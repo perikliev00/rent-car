@@ -1,3 +1,4 @@
+// validationResult – резултат от route-level express-validator правила.
 const { validationResult } = require('express-validator');
 const Car = require('../models/Car');
 const { computeBookingPrice } = require('../utils/pricing');
@@ -10,8 +11,10 @@ const {
 } = require('../services/reservationService');
 const orderCarController = require('./orderCarController');
 
+// Re-export на order page handler за /orders.
 exports.getOrderCar = orderCarController.getOrderCar;
 
+// Освобождава активната резервация за session-а – JSON или redirect според caller.
 exports.releaseActiveReservation = async (req, res) => {
   const wantsJson =
     req.headers.accept && req.headers.accept.includes('application/json');
@@ -42,6 +45,7 @@ exports.releaseActiveReservation = async (req, res) => {
   }
 };
 
+// Заменя текущия hold с нов при промяна на dates/car/location на order page.
 exports.releaseAndReholdReservation = async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {

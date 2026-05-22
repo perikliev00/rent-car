@@ -1,6 +1,7 @@
+// validationResult – route-level form validation грешки.
 const { validationResult } = require('express-validator');
 
-// Get contacts page
+// Render на публичната contact страница.
 exports.getContacts = async (req, res, next) => {
   try {
     res.render('contacts', {
@@ -13,7 +14,7 @@ exports.getContacts = async (req, res, next) => {
   }
 };
 
-// Handle contact form submission
+// Обработка на contact form – валидира и записва съобщение.
 exports.postContact = async (req, res, next) => {
   try {
     const errors = validationResult(req);
@@ -48,7 +49,7 @@ exports.postContact = async (req, res, next) => {
   }
 };
 
-// Admin: list contacts
+// Admin: списък с contact съобщения – сортирани от най-новите.
 exports.getAdminContacts = async (req, res, next) => {
   try {
     const Contact = require('../models/Contact');
@@ -61,11 +62,11 @@ exports.getAdminContacts = async (req, res, next) => {
   }
 };
 
-// Admin: update status
+// Admin: обновява workflow статуса на едно contact съобщение.
 exports.postUpdateContactStatus = async (req, res, next) => {
   try {
     const Contact = require('../models/Contact');
-    const { status } = req.body; // expected: 'new' | 'ready' | 'done'
+    const { status } = req.body;
     await Contact.findByIdAndUpdate(req.params.id, { status });
     res.redirect('/admin/contacts');
   } catch (err) {
@@ -75,7 +76,7 @@ exports.postUpdateContactStatus = async (req, res, next) => {
   }
 };
 
-// Admin: delete contact
+// Admin: изтрива contact съобщение постоянно.
 exports.postDeleteContact = async (req, res, next) => {
   try {
     const Contact = require('../models/Contact');

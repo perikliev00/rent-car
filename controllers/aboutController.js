@@ -1,4 +1,4 @@
-// Get about page
+// GET /about – about страница.
 exports.getAbout = async (req, res, next) => {
   try {
     res.render('about', {

@@ -1,17 +1,23 @@
-const { body, validationResult } = require('express-validator');
+// validationResult – route-level validation грешки от authRoutes.
+const { validationResult } = require('express-validator');
+// bcrypt – верификация и хеширане на пароли.
 const bcrypt = require('bcrypt');
+// User model – credentials и роли.
 const User = require('../models/User');
 const bodyParser = require('body-parser');
 const mongoose = require('mongoose');
 
+// Render на login страницата.
 exports.getLogin = (req, res) => {
 	res.render('login', { title: 'Login' });
 };
+
+// Обработка на login form – удостоверяване и session.
 exports.postLogin = async (req, res, next) => {
 	try {
 	  const errors = validationResult(req);
 	  const { email, password } = req.body;
-  
+
 	  if (!errors.isEmpty()) {
 		return res.status(422).render('login', {
 		  title: 'Login',
@@ -19,7 +25,7 @@ exports.postLogin = async (req, res, next) => {
 		  errors: errors.array(),
 		});
 	  }
-  
+
 	  const user = await User.findOne({ email });
 	  if (!user) {
 		return res.status(401).render('login', {
@@ -28,7 +34,7 @@ exports.postLogin = async (req, res, next) => {
 		  errors: [{ msg: 'Invalid email or password' }],
 		});
 	  }
-  
+
 	  const result = await bcrypt.compare(password, user.password);
 	  if (!result) {
 		return res.status(401).render('login', {
@@ -37,7 +43,7 @@ exports.postLogin = async (req, res, next) => {
 		  errors: [{ msg: 'Invalid email or password' }],
 		});
 	  }
-  
+
 	  req.session.isLoggedIn = true;
 	  req.session.user = {
 		_id: user._id,
@@ -51,14 +57,18 @@ exports.postLogin = async (req, res, next) => {
 	  return next(err);
 	}
   };
+
+// Render на signup страницата.
 exports.getSignup = (req, res) => {
 	res.render('signup', { title: 'Sign up' });
 };
 
+// Обработка на signup – създава потребител и логва веднага.
 exports.postSignup = async (req, res, next) => {
 	try {
 		const errors = validationResult(req);
 		const { email, password } = req.body;
+
 		if (!errors.isEmpty()) {
 			return res.status(422).render('signup', {
 				title: 'Sign up',
@@ -102,6 +112,7 @@ exports.postSignup = async (req, res, next) => {
 	}
 };
 
+// Destroy session и logout.
 exports.getLogout = (req, res) => {
 	try {
 		req.session.isLoggedIn = false;
