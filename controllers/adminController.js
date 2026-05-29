@@ -3,7 +3,7 @@ const { validationResult } = require('express-validator');
 // dashboardService – admin dashboard данни.
 const dashboardService = require('../services/admin/dashboardService');
 // orderAdminService – admin order CRUD и transaction логика.
-const orderAdminService = require('../services/admin/orderAdminService');
+const orderAdminService = require('../services/admin/order');
 // carAdminService – admin fleet CRUD логика.
 const carAdminService = require('../services/admin/carAdminService');
 
