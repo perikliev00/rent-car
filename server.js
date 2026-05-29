@@ -1,21 +1,32 @@
+// Зарежда environment променливи от .env преди другите модули да четат process.env.
 require('dotenv').config();
 
-// app.js
-// ─────────────────────────────────────────────────────────────
-// Imports
+// Express framework – за HTTP сървър и middleware pipeline.
 const express = require('express');
+// Mongoose – за връзка с MongoDB и затваряне при shutdown.
 const mongoose = require('mongoose');
+// body-parser – за urlencoded и JSON request bodies на non-webhook routes.
 const bodyParser = require('body-parser');
+// path – за filesystem-safe абсолютни пътища към static директории.
 const path = require('path');
+// Express sessions – за guest/admin state между заявките.
 const session = require('express-session');
+// Session persistence в MongoDB вместо memory storage.
 const MongoDBStore = require('connect-mongodb-session')(session);
+// crypto – за per-request CSP nonce за разрешени inline scripts.
 const crypto = require('crypto');
-const checkoutController = require('./controllers/checkoutController');
-const expressRaw = express.raw;
+// payment controller – Stripe webhook се mount-ва директно в server.js.
+const paymentController = require('./controllers/payment');
+// Rate limiter – защита на admin route група от request bursts.
 const { adminLimiter } = require('./middleware/rateLimit');
+// Security bootstrap – Helmet и свързани headers.
 const applySecurity = require('./config/security');
+// correlation ID middleware – уникален request ID за логове и error страници.
+const { requestContext } = require('./middleware/requestContext');
+// 404 generator и central error middleware.
+const { handleNotFound, errorHandler } = require('./middleware/errorHandler');
 
-// Routes
+// Route модули – mount-ват се в предсказуем ред.
 const paymentRoutes = require('./routes/paymentRoutes');
 const reservationRoutes = require('./routes/reservationRoutes');
 const carRoutes     = require('./routes/carRoutes');
@@ -24,95 +35,132 @@ const supportRoutes = require('./routes/supportRoutes');
 const footerRoutes  = require('./routes/footerRoutes');
 const authRoutes    = require('./routes/authRoutes');
 
-// Housekeeping (cleanup services)
+// Background maintenance jobs – почистват booking state с времето.
 const { cleanUpOutdatedDates } = require('./services/carService');
 const { cleanUpAbandonedReservations } = require('./services/reservationService');
 
-// ─────────────────────────────────────────────────────────────
-// Constants
+// Главният Express application обект.
 const app = express();
-const SESSION_IDLE_MS = 20 * 60 * 1000; // 20 minutes idle timeout
+// Idle timeout за session TTL и cookie expiry.
+const SESSION_IDLE_MS = 20 * 60 * 1000; // 20 минути
+// Определяме веднъж дали приложението работи в production.
 const isProd = process.env.NODE_ENV === 'production';
+// Референция към live HTTP сървъра – за затваряне при graceful shutdown.
+let server = null;
+// Флаг – true след начало на shutdown – нови заявки получават 503.
+let isShuttingDown = false;
+// Проследяване на setInterval handles – да се спрат чисто.
+const backgroundJobs = [];
 
-// Mongo
+// Mongo connection string от environment.
 const MONGODB_URI = process.env.MONGODB_URI;
 
-// ─────────────────────────────────────────────────────────────
-// Static + Templating
+// correlation ID – преди всичко, за да има всеки log ред достъп.
+app.use(requestContext);
+// General static assets от public/.
 app.use(express.static(path.join(__dirname, 'public')));
+// CSS файлове от явен /css mount.
 app.use('/css',    express.static(path.join(__dirname, 'public/css')));
+// Car и други images от public/images.
 app.use('/images', express.static(path.join(__dirname, 'public/images')));
+// EJS за server-side views.
 app.set('view engine', 'ejs');
 
-// Body Parsers
+// Stripe webhooks – raw body за верификация на подписа.
 app.post(
   '/webhook/stripe',
   express.raw({ type: 'application/json' }),
-  checkoutController.handleStripeWebhook
+  paymentController.handleStripeWebhook
 );
+// HTML form submissions – за нормалните routes.
 app.use(bodyParser.urlencoded({ extended: true }));
+// JSON request bodies – за API-style routes.
 app.use(bodyParser.json());
 
-// CSP nonce must be set before Helmet so script-src can allow nonced scripts
+// CSP nonce – преди Helmet, за да може script-src да разреши nonced scripts.
 app.use((req, res, next) => {
+  // Генерираме свеж nonce на заявка и го излагаме към templates/security.
   res.locals.cspNonce = crypto.randomBytes(16).toString('base64');
   next();
 });
+// Helmet/CSP и други HTTP security headers след nonce.
 applySecurity(app, { isProd });
 
-// ─────────────────────────────────────────────────────────────
-// Session store
+// При shutdown – отказваме нови заявки с 503 вместо да висят.
+app.use((req, res, next) => {
+  if (!isShuttingDown) {
+    return next();
+  }
+
+  // Process-ът изтича и не трябва да приема нови business заявки.
+  const message = 'Server is restarting. Please retry in a few moments.';
+  // Browser заявки – rendered error страница.
+  if ((req.get('accept') || '').includes('text/html')) {
+    return res.status(503).render('error/500', {
+      title: 'Service Unavailable',
+      message,
+      correlationId: req.correlationId,
+    });
+  }
+
+  // Програмни клиенти – JSON payload с app error форма.
+  return res.status(503).json({
+    error: {
+      code: 'SERVICE_UNAVAILABLE',
+      message,
+      correlationId: req.correlationId,
+    },
+  });
+});
+
+// Mongo-backed session store – login/guest state оцелява при restart.
 const store = new MongoDBStore({
   uri: MONGODB_URI,
   collection: 'sessions',
-  expires: SESSION_IDLE_MS, // TTL (server-side). Each write/refresh extends this when using "rolling".
+  expires: SESSION_IDLE_MS, // TTL; всеки write/refresh удължава при "rolling".
 });
 
+// Логваме session store грешки – счупена persistence засяга auth и booking hold.
 store.on('error', (err) => {
   console.error('Session store error:', err && err.message ? err.message : err);
 });
 
-// If you terminate TLS at a proxy (Heroku/Render/Nginx), trust it in prod
+// Ако TLS се terminate-ва на proxy (Heroku/Render/Nginx) – trust в prod.
 if (isProd) {
   app.set('trust proxy', 1);
 }
 
-// Sessions (✅ works on localhost + prod)
+// Sessions
 app.use(session({
   name: 'sid',
   secret: process.env.SESSION_SECRET ,
   store,
   resave: false,
-  saveUninitialized: false, // create session only when you set something
-  rolling: true,            // refresh cookie expiry on each request (idle timeout)
+  saveUninitialized: false, // session само когато сетнем нещо
+  rolling: true,            // refresh cookie expiry при всяка заявка (idle timeout)
   cookie: {
     httpOnly: true,
     sameSite: 'lax',
-    secure: isProd,         // false on localhost (HTTP), true in prod (HTTPS)
-    maxAge: SESSION_IDLE_MS,       // browser expiry (idle-based thanks to rolling)
+    secure: isProd,         // false на localhost, true в prod
+    maxAge: SESSION_IDLE_MS,       // browser expiry (idle чрез rolling)
   },
 }));
 
-// (Optional) quick debug to ensure the same sessionID across requests/tabs
-// app.use((req, _res, next) => { console.log('sessionID:', req.sessionID); next(); });
-
-// ─────────────────────────────────────────────────────────────
-// Ensure session defaults (you wanted a session even for guests)
-// Place BEFORE routes so the session exists on first hit
+// Session defaults – ПРЕДИ routes, за да има session от първия hit.
 app.use((req, res, next) => {
   if (!req.session.isPaid) req.session.isPaid = false;
-  // Mirror the id inside the session doc for convenience
   if (req.session._sid !== req.sessionID) req.session._sid = req.sessionID;
   next();
 });
 
-// Expose auth state to templates
+// Auth state за templates.
 app.use((req, res, next) => {
   res.locals.isLoggedIn = !!req.session.isLoggedIn;
   res.locals.user = req.session.user || null;
   next();
 });
 
+// csrfToken винаги в res.locals – дори на routes без CSRF middleware.
 app.use((req, res, next) => {
   if (typeof res.locals.csrfToken === 'undefined') {
     res.locals.csrfToken = null;
@@ -120,85 +168,111 @@ app.use((req, res, next) => {
   next();
 });
 
-// ─────────────────────────────────────────────────────────────
-// Routes
+// Mount customer-facing car routes първо.
 app.use(carRoutes);
 app.use(reservationRoutes);
 app.use(paymentRoutes);
 app.use(authRoutes);
+// admin routes – защитени от admin rate limiter.
 app.use(adminLimiter, adminRoutes);
 app.use(supportRoutes);
 app.use(footerRoutes);
+// Ако никой route не match-не – 404.
+app.use(handleNotFound);
+// Финален safety net – всички грешки стигат тук.
+app.use(errorHandler);
 
+// Регистрира background job handle за stop при shutdown.
+function registerBackgroundJob(job) {
+  backgroundJobs.push(job);
+  return job;
+}
 
+// Спира всички tracked intervals.
+function stopBackgroundJobs() {
+  while (backgroundJobs.length) {
+    const job = backgroundJobs.pop();
+    clearInterval(job);
+  }
+}
 
-// 404 handler
-app.use((req, res, next) => {
-  res.status(404).render('error/404', {
-    title: 'Page Not Found',
-    message: 'The page you are looking for does not exist.',
-  });
-});
+// Controlled shutdown при фатални събития.
+async function gracefulShutdown(trigger, error = null) {
+  if (isShuttingDown) {
+    return;
+  }
 
-app.use((err, req, res, next) => {
-  if (err && err.code === 'EBADCSRFTOKEN') {
-    const message = 'Invalid or missing CSRF token.';
-    if (req.accepts('html')) {
-      return res.status(403).render('error/500', {
-        title: 'Security Error',
-        message,
+  isShuttingDown = true;
+  console.error(`Starting graceful shutdown due to ${trigger}`);
+  if (error) {
+    console.error(error);
+  }
+
+  stopBackgroundJobs();
+
+  // Safety timer – при зависване на shutdown – force exit.
+  const forceExitTimer = setTimeout(() => {
+    console.error('Graceful shutdown timed out. Forcing exit.');
+    process.exit(error ? 1 : 0);
+  }, 10000);
+  forceExitTimer.unref?.();
+
+  try {
+    if (server) {
+      await new Promise((resolve, reject) => {
+        server.close((serverCloseError) => {
+          if (serverCloseError) {
+            reject(serverCloseError);
+            return;
+          }
+          resolve();
+        });
       });
     }
-    return res.status(403).json({ error: message });
+
+    await mongoose.connection.close();
+  } catch (shutdownError) {
+    console.error('Error during graceful shutdown:', shutdownError);
+  } finally {
+    clearTimeout(forceExitTimer);
+    process.exit(error ? 1 : 0);
   }
-  return next(err);
-});
+}
 
-// Central error handler
-app.use((err, req, res, next) => {
-  console.error('❌ Unhandled error:', err);
-
-  if (res.headersSent) {
-    return next(err);
-  }
-
-  const status = err.status || 500;
-  const message =
-    err.publicMessage ||
-    err.message ||
-    'An unexpected error occurred. Please try again later.';
-
-  if (status === 404) {
-    return res.status(404).render('error/404', {
-      title: 'Page Not Found',
-      message,
-    });
-  }
-
-  return res.status(status).render('error/500', {
-    title: status === 500 ? 'Server Error' : 'Error',
-    message,
-  });
-});
-
-// ─────────────────────────────────────────────────────────────
-// Connect & start
+// Bootstrap – async за Mongo connect и housekeeping.
 (async () => {
   try {
     await mongoose.connect(MONGODB_URI);
     console.log('✓ MongoDB connected');
 
-    // run immediately, then on intervals
     await cleanUpOutdatedDates();
     await cleanUpAbandonedReservations();
 
-    setInterval(cleanUpOutdatedDates, 3 * 60 * 1000);          // every 3 min
-    setInterval(cleanUpAbandonedReservations, 3 * 60 * 1000);  // every 3 min
+    registerBackgroundJob(setInterval(cleanUpOutdatedDates, 3 * 60 * 1000));          // всеки 3 мин
+    registerBackgroundJob(setInterval(cleanUpAbandonedReservations, 3 * 60 * 1000));  // всеки 3 мин
 
     const PORT = process.env.PORT || 3000;
-    app.listen(PORT, () => {
+    server = app.listen(PORT, () => {
       console.log(`🚗  LuxRide Server running at http://localhost:${PORT}`);
       console.log(`NODE_ENV=${process.env.NODE_ENV || 'development'}  isProd=${isProd}`);
+    });
+
+    process.on('SIGINT', () => {
+      gracefulShutdown('SIGINT');
+    });
+
+    process.on('SIGTERM', () => {
+      gracefulShutdown('SIGTERM');
+    });
+
+    process.on('unhandledRejection', (reason) => {
+      console.error('Unhandled promise rejection:', reason);
+      gracefulShutdown('unhandledRejection', reason instanceof Error ? reason : new Error(String(reason)));
+    });
+
+    process.on('uncaughtException', (error) => {
+      console.error('Uncaught exception:', error);
+      gracefulShutdown('uncaughtException', error);
     });
   } catch (err) {
     console.error('MongoDB connection error:', err);

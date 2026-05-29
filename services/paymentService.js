@@ -1,3 +1,4 @@
+// dateFormatter – raw form стойности в display labels за EJS шаблони.
 const { formatDateForDisplay, formatLocationName } = require('../utils/dateFormatter');
 const {
   buildBaseOrderPayload,
@@ -5,6 +6,7 @@ const {
 } = require('./orderViewModelService');
 const { trimContactDetails } = require('./contactService');
 
+// Създава order page view-model при validation failure или re-render.
 function buildOrderPageViewModel(car, formData, message, options = {}) {
   const pickupDateISO = formData.pickupDate;
   const returnDateISO = formData.returnDate;
@@ -59,6 +61,7 @@ function buildOrderPageViewModel(car, formData, message, options = {}) {
   return viewModel;
 }
 
+// Нормализира checkout contact полета преди запис в reservation/order.
 function normalizeContactDetails(formData = {}) {
   return trimContactDetails(formData);
 }
@@ -67,4 +70,3 @@ module.exports = {
   buildOrderPageViewModel,
   normalizeContactDetails,
 };
-

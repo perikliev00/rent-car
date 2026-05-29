@@ -1,3 +1,4 @@
+// Express router – всички authentication routes в един модул.
 const express = require('express');
 const router = express.Router();
 const { body } = require('express-validator');
@@ -6,6 +7,7 @@ const { requireGuest, requireAuth } = require('../middleware/auth');
 const { authLimiter } = require('../middleware/rateLimit');
 const { csrfProtection, setCsrfToken } = require('../middleware/csrf');
 
+// Login форма – само за guests; CSRF token за безопасно submit.
 router.get('/login', requireGuest, csrfProtection, setCsrfToken, authController.getLogin);
 router.post(
 	'/login',
@@ -26,7 +28,6 @@ router.post(
 	authController.postLogin
 );
 
-// Signup routes
 router.get('/signup', requireGuest, csrfProtection, setCsrfToken, authController.getSignup);
 router.post(
 	'/signup',
@@ -44,10 +45,9 @@ router.post(
 			.isLength({ min: 6 })
 			.withMessage('Password must be at least 6 characters long')
 	],
-	authController.postSignup
+		authController.postSignup
 );
 
-// Logout
 router.get('/logout', requireAuth, authController.getLogout);
 
 module.exports = router;

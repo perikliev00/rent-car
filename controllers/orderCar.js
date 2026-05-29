@@ -16,10 +16,10 @@ const {
   buildBaseOrderPayload,
   buildOrderViewModel,
 } = require('../services/orderViewModelService');
+const asyncHandler = require('../utils/asyncHandler');
+const { NotFoundError, ValidationError } = require('../utils/appError');
 
-// Подготвя и render-ва order page за избрана кола и date/location комбинация.
-module.exports.getOrderCar = async (req, res, next) => {
-  try {
+module.exports.getOrderCar = asyncHandler(async (req, res) => {
     const {
       'pickup-date': pickupDateISO,
       'return-date': returnDateISO,
@@ -27,29 +27,62 @@ module.exports.getOrderCar = async (req, res, next) => {
       'return-location': returnLocation,
       'pickup-time': pickupTime,
       'return-time': returnTime,
-      'rental-days': rentalDaysFromForm,
-      'delivery-price': deliveryPriceFromForm,
-      'return-price': returnPriceFromForm,
-      'total-price': totalPriceFromForm,
       carId,
     } = req.body || {};
 
     if (!carId) {
-      return res.status(400).send('Car not specified.');
+      throw new ValidationError('Car not specified.');
     }
-
-    const car = await Car.findById(carId);  // Зареждаме колата от БД.
+    const car = await Car.findById(carId);
     if (!car) {
-      return res.status(404).send('Car not found.');
+      throw new NotFoundError('Car not found.');
     }
+    const pickupDateDisplay = formatDateForDisplay(pickupDateISO);
+    const returnDateDisplay = formatDateForDisplay(returnDateISO);
+    const pickupLocationDisplay = formatLocationName(pickupLocation);
+    const returnLocationDisplay = formatLocationName(returnLocation);
+
+    let pricing = {
+      rentalDays: 0,
+      deliveryPrice: 0,
+      returnPrice: 0,
+      totalPrice: 0,
+    };
+
+    const renderOrderPage = (overrides = {}, status = 200) => {
+      const basePayload = buildBaseOrderPayload({
+        pickupDateISO,
+        returnDateISO,
+        pickupTime,
+        returnTime,
+        pickupLocation,
+        returnLocation,
+        pickupDateDisplay,
+        returnDateDisplay,
+        pickupLocationDisplay,
+        returnLocationDisplay,
+        pricing,
+        releaseRedirect: req.originalUrl,
+      });
+
+      const viewModel = buildOrderViewModel(car, basePayload, {
+        message: overrides.message ?? null,
+        existingReservation: overrides.existingReservation ?? null,
+      });
+
+      if (res.locals?.csrfToken) {
+        viewModel.csrfToken = res.locals.csrfToken;
+      }
+
+      return res.status(status).render('orderMain', viewModel);
+    };
 
     const {
       isValid,
       errors: bookingErrors,
       startDate,
       endDate,
-      rentalDays,
-    } = validateBookingDates({  // Валидираме и нормализираме датите.
+    } = validateBookingDates({
       pickupDate: pickupDateISO,
       returnDate: returnDateISO,
       pickupTime: pickupTime || '00:00',
@@ -57,58 +90,32 @@ module.exports.getOrderCar = async (req, res, next) => {
     });
 
     if (!isValid || !startDate || !endDate) {
-      return res.status(400).send('Invalid booking dates.');
+      if (startDate && endDate) {
+        pricing = computeBookingPrice(car, startDate, endDate, pickupLocation, returnLocation);
+      }
+      return renderOrderPage(
+        { message: bookingErrors[0] || 'Invalid booking dates.' },
+        422
+      );
     }
 
-    const start = startDate;
-    const end = endDate;
-
-    const pricing = computeBookingPrice(car, start, end, pickupLocation, returnLocation);  // Изчисляваме цена.
+    pricing = computeBookingPrice(car, startDate, endDate, pickupLocation, returnLocation);
     if (!pricing || !Number.isFinite(pricing.totalPrice) || pricing.totalPrice <= 0) {
-      return res.status(400).send('Unable to calculate price for this rental. Please try again.');
+      return renderOrderPage(
+        { message: 'Unable to calculate price for this rental. Please try again.' },
+        422
+      );
     }
 
-    const pickupDateDisplay = formatDateForDisplay(pickupDateISO);
-    const returnDateDisplay = formatDateForDisplay(returnDateISO);
-    const pickupLocationDisplay = formatLocationName(pickupLocation);
-    const returnLocationDisplay = formatLocationName(returnLocation);
     const sessionId = getSessionId(req);
     const now = new Date();
-
-    const basePayload = buildBaseOrderPayload({
-      pickupDateISO,
-      returnDateISO,
-      pickupTime,
-      returnTime,
-      pickupLocation,
-      returnLocation,
-      pickupDateDisplay,
-      returnDateDisplay,
-      pickupLocationDisplay,
-      returnLocationDisplay,
-      pricing,
-      releaseRedirect: req.originalUrl,
-    });
-
-    const renderOrderPage = (overrides = {}, status = 200) => {
-      const viewModel = buildOrderViewModel(car, basePayload, {
-        message: overrides.message ?? null,
-        existingReservation: overrides.existingReservation ?? null,
-      });
-
-      if (res.locals && res.locals.csrfToken) {
-        viewModel.csrfToken = res.locals.csrfToken;
-      }
-
-      return res.status(status).render('orderMain', viewModel);
-    };
 
     let existingForSession = await findActiveReservationBySession(req);  // Има ли активна резервация за този session?
     if (existingForSession) {
       const sameReservationParams =
         String(existingForSession.carId) === String(car._id) &&
-        existingForSession.pickupDate?.getTime?.() === start.getTime() &&
-        existingForSession.returnDate?.getTime?.() === end.getTime() &&
+        existingForSession.pickupDate?.getTime?.() === startDate.getTime() &&
+        existingForSession.returnDate?.getTime?.() === endDate.getTime() &&
         existingForSession.pickupTime === pickupTime &&
         existingForSession.returnTime === returnTime &&
         existingForSession.pickupLocation === pickupLocation &&
@@ -128,8 +135,8 @@ module.exports.getOrderCar = async (req, res, next) => {
 
     const { overlappingReservation, bookedOverlap } = await checkCarAvailabilityForRange({  // Проверка за конфликти.
       carId: car._id,
-      startDate: start,
-      endDate: end,
+      startDate,
+      endDate,
       now,
     });
 
@@ -148,8 +155,8 @@ module.exports.getOrderCar = async (req, res, next) => {
     await createPendingReservation({
       carId: car._id,
       sessionId,
-      startDate: start,
-      endDate: end,
+      startDate,
+      endDate,
       pickupTime,
       returnTime,
       pickupLocation,
@@ -158,9 +165,4 @@ module.exports.getOrderCar = async (req, res, next) => {
     });
 
     return renderOrderPage({ message: null, existingReservation: null });
-  } catch (err) {
-    console.error('getOrderCar error:', err);
-    err.publicMessage = 'Unable to prepare reservation.';
-    return next(err);
-  }
-};
+  }); 

@@ -1,6 +1,8 @@
+// Reservation model – за откриване на конфликти admin order с активни online holds.
 const Reservation = require('../../models/Reservation');
 const { ACTIVE_RESERVATION_STATUSES } = require('../../utils/reservationHelpers');
 
+// Намира активен reservation hold който overlap-ва искания car/date range.
 async function findActiveReservationHold(carId, start, end, session = null) {
   const now = new Date();
   const query = {
@@ -21,4 +23,3 @@ async function findActiveReservationHold(carId, start, end, session = null) {
 module.exports = {
   findActiveReservationHold,
 };
-

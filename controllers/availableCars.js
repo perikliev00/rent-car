@@ -1,10 +1,4 @@
-// =============================================================================
-// availableCars.js – контролер за търсене на налични коли (POST /search)
-// =============================================================================
-
-// Връща грешките от express-validator за формата
 const { validationResult } = require('express-validator');
-// Модел за резервации – за да намерим кои коли са заети в избрания период
 const Reservation = require('../models/Reservation');
 const {
   parseCarFilterRaw,
@@ -14,28 +8,22 @@ const {
 const { computeBookingPrice } = require('../utils/pricing');
 const filterCarsByComputedUnitPrice = require('../utils/carFilters').filterCarsByComputedUnitPrice;
 
-// Активни статуси на резервация + функция за session ID (да изключим собствените резервации)
 const { ACTIVE_RESERVATION_STATUSES, getSessionId } = require('../utils/reservationHelpers');
-// Валидира дати и времена за наемане (не в миналото, return след pickup и т.н.)
 const { validateBookingDates } = require('../utils/bookingValidation');
 const { paginateCars, parsePage } = require('../utils/paginateCars');
 const asyncHandler = require('../utils/asyncHandler');
 
 exports.postSearchCars = asyncHandler(async (req, res) => {
-  // Събираме всички валидационни грешки от формата
+
   let errors = validationResult(req);
-  // Текущ момент – за проверка дали дата/час са в миналото
   const now = new Date();
-  // Начало на днес (00:00) – за сравнение „днес“
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()); // 00:00 today
 
-  // Сурови стойности от формата – само дати (YYYY-MM-DD) и времена
   const pickupDateOnly = req.body['pickup-date'];
   const returnDateOnly = req.body['return-date'];
   const pickupTimeInput = req.body['pickup-time'];
   const returnTimeInput = req.body['return-time'];
 
-  // Валидация на дати и времена: връща дали е валидно, списък грешки и нормализирани startDate/endDate
   const {
     isValid,
     errors: bookingErrors,
@@ -50,14 +38,12 @@ exports.postSearchCars = asyncHandler(async (req, res) => {
     now,
   });
 
-  // Ако датите не са валидни – добавяме грешките към общия списък
   if (!isValid) {
     bookingErrors.forEach((msg) => {
       errors.errors.push({ msg });
     });
   }
 
-  // Ако има грешки – не правим търсене в БД, а връщаме началната страница с едно съобщение и запазени стойности
   if (!errors.isEmpty()) {
     const { cars, currentPage, totalPages } = await paginateCars({}, {
       page: parsePage(req.body.page ?? req.query.page),
@@ -77,7 +63,7 @@ exports.postSearchCars = asyncHandler(async (req, res) => {
     return res.status(422).render('index', {
       title: 'Search cars',
       cars,
-      message, // името съвпада с проверката в EJS
+      message, 
       pickupDateISO,
       returnDateISO,
       pickupDate: pickupDateOnly,

@@ -1,17 +1,26 @@
+// Express router – reservation hold create, release и release-and-rehold flows.
 const express = require('express');
+// body validators – защита на reservation payload преди controllers.
 const { body } = require('express-validator');
+const orderCarController = require('../controllers/orderCar');
+// bookingController – release / re-hold handlers.
 const bookingController = require('../controllers/bookingController');
+// CSRF – задължителен за reservation-changing POST заявки.
 const { csrfProtection, setCsrfToken } = require('../middleware/csrf');
 
 const router = express.Router();
 
+// Разрешени pickup/return локации – за re-hold validation.
 const LOCATIONS = [
   'office', 'sunny-beach', 'sveti-vlas', 'nesebar', 'burgas', 'burgas-airport',
   'sofia', 'sofia-airport', 'varna', 'varna-airport', 'plovdiv', 'eleni', 'ravda',
 ];
 
-router.post('/orders', csrfProtection, setCsrfToken, bookingController.getOrderCar);
+// Order създаване – render на order page за избрана кола и date range.
+router.post('/orders', csrfProtection, setCsrfToken, orderCarController.getOrderCar);
+// Освобождава активната резервация за текущата session.
 router.post('/reservations/release', csrfProtection, bookingController.releaseActiveReservation);
+// Атомарно заменя активния hold с нов за обновени booking параметри.
 router.post(
   '/reservations/release-and-rehold',
   csrfProtection,

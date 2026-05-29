@@ -1,3 +1,4 @@
+// Mongoose дефинира schema за идемпотентна обработка на Stripe webhooks.
 const mongoose = require('mongoose');
 
 /**
@@ -15,22 +16,27 @@ const mongoose = require('mongoose');
  */
 const processedStripeEventSchema = new mongoose.Schema(
   {
+    // Уникален Stripe event id (evt_*) – primary idempotency key.
     eventId: {
       type: String,
       required: true,
       unique: true,
       index: true,
     },
+    // Свързан Stripe checkout session id за debugging и correlation.
     stripeSessionId: {
       type: String,
       index: true,
     },
+    // Timestamp кога приложението е записал event-а като обработен.
     processedAt: {
       type: Date,
       default: Date.now,
     },
   },
+  // Timestamps за operational debugging/history.
   { timestamps: true }
 );
 
+// Експорт на ProcessedStripeEvent модела.
 module.exports = mongoose.model('ProcessedStripeEvent', processedStripeEventSchema);

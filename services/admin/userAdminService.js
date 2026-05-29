@@ -1,7 +1,6 @@
 /**
- * Placeholder for future admin user management logic.
- * Keeping this service stubbed ensures controllers can depend on a service layer
- * without changing route signatures later.
+ * Placeholder за бъдеща admin user management логика.
+ * Stub сервис – controllers могат да разчитат на service layer.
  */
 
 module.exports = {
@@ -9,4 +8,3 @@ module.exports = {
     return [];
   },
 };
-

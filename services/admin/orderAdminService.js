@@ -1,8 +1,11 @@
+// Mongoose – за optional transaction sessions в admin order mutations.
 const mongoose = require('mongoose');
 const Order = require('../../models/Order');
 const Car = require('../../models/Car');
 const { computeBookingPrice } = require('../../utils/pricing');
+// Timezone helper parses date+time fields using the business timezone rules.
 const { parseSofiaDate } = require('../../utils/timeZone');
+// Booking-sync helpers keep `Car.dates` aligned with admin order CRUD operations.
 const {
   expireFinishedOrders,
   purgeExpired,
@@ -11,24 +14,31 @@ const {
   moveRange,
   removeRange,
 } = require('../../utils/bookingSync');
+// Admin reservation helper detects overlap with active online holds.
 const { findActiveReservationHold } = require('./reservationAdminService');
+// Contact helpers normalize contact fields and enforce required admin contact data.
 const {
   trimContactDetails,
   contactFieldsIncomplete,
 } = require('../contactService');
 
+// Shared message shown when required contact fields are missing.
 const CONTACT_REQUIRED_MESSAGE =
   'Full name, phone number, email, and address are required.';
+// Shared message shown when an online reservation hold blocks an admin booking.
 const RESERVATION_CONFLICT_MESSAGE =
   'Selected car currently has an active online reservation in this period. Please choose different dates or wait until the hold expires.';
 
+// Allowed status filters in the admin order list UI.
 const ALLOWED_STATUSES = ['active', 'pending', 'expired', 'cancelled'];
+// Transaction options used when Mongo transactions are available.
 const TXN_OPTIONS = {
   readPreference: 'primary',
   readConcern: { level: 'local' },
   writeConcern: { w: 'majority' },
 };
 
+// Domain-style error used for recoverable admin form problems.
 class OrderFormError extends Error {
   constructor(code, message) {
     super(message);
@@ -38,6 +48,7 @@ class OrderFormError extends Error {
   }
 }
 
+// Domain-style error used when restoring a deleted order is impossible.
 class OrderRestoreError extends Error {
   constructor(code, message) {
     super(message);
@@ -47,6 +58,7 @@ class OrderRestoreError extends Error {
   }
 }
 
+// Detect whether the current Mongo environment supports transactions.
 function isTransactionUnsupportedError(err) {
   if (!err || !err.message) return false;
   const msg = err.message.toLowerCase();
@@ -57,10 +69,12 @@ function isTransactionUnsupportedError(err) {
   );
 }
 
+// Small helper so `save()` calls can receive `{ session }` only when a transaction exists.
 function sessionOptions(session) {
   return session ? { session } : undefined;
 }
 
+// Execute work inside a Mongo transaction when supported, otherwise fall back to non-transactional execution.
 async function runWithOptionalTransaction(work) {
   let session = null;
   try {
@@ -80,18 +94,22 @@ async function runWithOptionalTransaction(work) {
     }
 
     if (err && (err.isOrderFormError || err.isOrderRestoreError)) {
+      // Known domain errors should be re-thrown untouched so controllers/services can handle them cleanly.
       throw err;
     }
 
     if (isTransactionUnsupportedError(err)) {
+      // Local standalone Mongo instances often lack replica-set transaction support, so fall back gracefully.
       await work(null);
       return;
     }
 
+    // All other failures are real unexpected errors.
     throw err;
   }
 }
 
+// Build the blank default state for the admin create-order form.
 function buildInitialOrderDefaults() {
   const now = new Date();
   const today = now.toISOString().slice(0, 10);
@@ -114,6 +132,7 @@ function buildInitialOrderDefaults() {
   };
 }
 
+// Rebuild form defaults from a submitted payload after validation/business-rule failures.
 function buildOrderFormDefaultsFromPayload(payload = {}) {
   return {
     pickupDate: payload.pickupDate || '',
@@ -146,10 +165,12 @@ function buildOrderFormDefaultsFromPayload(payload = {}) {
   };
 }
 
+// Admin create/edit forms need a car list for dropdown selection.
 async function getCarsList() {
   return Car.find({}).sort({ name: 1 }).lean();
 }
 
+// Parse and validate a date/time range from admin form input.
 function parseDateRange(pickupDate, pickupTime, returnDate, returnTime) {
   const start = parseSofiaDate(pickupDate, pickupTime || '00:00');
   const end = parseSofiaDate(returnDate, returnTime || '23:59');
@@ -165,6 +186,7 @@ function parseDateRange(pickupDate, pickupTime, returnDate, returnTime) {
   return { start, end };
 }
 
+// Re-render payload for the admin create-order form after a recoverable failure.
 async function buildOrderNewErrorResult(payload, errorMessage) {
   const cars = await getCarsList();
   return {
@@ -178,6 +200,7 @@ async function buildOrderNewErrorResult(payload, errorMessage) {
   };
 }
 
+// Normalize a value into YYYY-MM-DD for HTML date inputs.
 function toISODate(value) {
   if (!value) return '';
   if (/^\d{4}-\d{2}-\d{2}/.test(value)) return String(value).slice(0, 10);
@@ -185,6 +208,7 @@ function toISODate(value) {
   return Number.isNaN(d.getTime()) ? '' : d.toISOString().slice(0, 10);
 }
 
+// Normalize a value into HH:MM for HTML time inputs.
 function toHHMM(value) {
   if (!value) return '';
   if (/^\d{2}:\d{2}$/.test(value)) return value;
@@ -192,6 +216,7 @@ function toHHMM(value) {
   return match ? `${String(match[1]).padStart(2, '0')}:${match[2]}` : '';
 }
 
+// Rebuild payload for the admin edit-order form after validation/business failures.
 async function buildOrderEditErrorResult(orderId, payload, errorMessage) {
   const order = await Order.findById(orderId).populate(
     'carId',
@@ -236,6 +261,7 @@ async function buildOrderEditErrorResult(orderId, payload, errorMessage) {
   };
 }
 
+// Normalize supported order-list filter query params.
 function mapFilters(query = {}) {
   const filters = {
     status: query.status || '',
@@ -246,21 +272,26 @@ function mapFilters(query = {}) {
   return filters;
 }
 
+// Fetch the main admin order list with optional filters.
 async function getOrdersList(query = {}) {
+  // Expire finished orders before listing so the UI reflects current business state.
   await expireFinishedOrders();
 
   const filters = mapFilters(query);
   const dbQuery = { isDeleted: { $ne: true } };
 
+  // Apply status filter only when it is recognized.
   if (filters.status && ALLOWED_STATUSES.includes(filters.status)) {
     dbQuery.status = filters.status;
   }
 
+  // Text search matches name, email, or phone.
   if (filters.search && filters.search.trim()) {
     const regex = new RegExp(filters.search.trim(), 'i');
     dbQuery.$or = [{ fullName: regex }, { email: regex }, { phoneNumber: regex }];
   }
 
+  // Convert optional date filters into timezone-aware Date objects.
   let rangeStart = null;
   let rangeEnd = null;
   if (filters.startDate) {
@@ -276,6 +307,7 @@ async function getOrdersList(query = {}) {
     }
   }
 
+  // When a date range is valid, filter orders that overlap that range.
   if (rangeStart || rangeEnd) {
     const start = rangeStart || rangeEnd;
     const end = rangeEnd || rangeStart;
@@ -285,6 +317,7 @@ async function getOrdersList(query = {}) {
     }
   }
 
+  // Load the filtered order list with basic car info for display.
   const orders = await Order.find(dbQuery)
     .populate('carId', 'name image price transmission seats')
     .sort({ createdAt: -1 });
@@ -295,6 +328,7 @@ async function getOrdersList(query = {}) {
   };
 }
 
+// Fetch expired orders for the dedicated admin page.
 async function getExpiredOrders() {
   await expireFinishedOrders();
   const orders = await Order.find({
@@ -309,6 +343,7 @@ async function getExpiredOrders() {
   };
 }
 
+// Fetch soft-deleted orders for the admin recycle-bin page.
 async function getDeletedOrders() {
   const orders = await Order.find({ isDeleted: true })
     .populate('carId', 'name image price transmission seats')
@@ -319,10 +354,12 @@ async function getDeletedOrders() {
   };
 }
 
+// Permanently remove all soft-deleted orders.
 async function emptyDeletedOrders() {
   await Order.deleteMany({ isDeleted: true });
 }
 
+// Build the data needed to render the admin create-order form.
 async function getCreateOrderForm() {
   const cars = await getCarsList();
   return {
@@ -331,6 +368,7 @@ async function getCreateOrderForm() {
   };
 }
 
+// Check whether a car is available for a specific range in the admin UI.
 async function getCarAvailability(carId, query = {}) {
   const { pickupDate, pickupTime, returnDate, returnTime } = query;
 
@@ -341,6 +379,7 @@ async function getCarAvailability(carId, query = {}) {
     };
   }
 
+  // Parse the requested range using Sofia-local business rules.
   const start = parseSofiaDate(pickupDate, pickupTime || '00:00');
   const end = parseSofiaDate(returnDate, returnTime || '23:59');
 
@@ -357,6 +396,7 @@ async function getCarAvailability(carId, query = {}) {
     };
   }
 
+  // Look for overlapping booked ranges in `Car.dates`.
   const conflictDoc = await Car.findOne({
     _id: carId,
     dates: {
@@ -366,6 +406,7 @@ async function getCarAvailability(carId, query = {}) {
 
   let conflicts = [];
   if (conflictDoc && Array.isArray(conflictDoc.dates)) {
+    // Return the exact overlapping date ranges so the admin UI can show details if needed.
     conflicts = conflictDoc.dates
       .filter(
         (d) =>
@@ -383,7 +424,9 @@ async function getCarAvailability(carId, query = {}) {
   };
 }
 
+// Public admin create-order entry point: normalize input, validate, then delegate to the transactional core.
 async function createOrder(payload) {
+  // Clean contact strings before validation.
   const trimmedContact = trimContactDetails(payload);
   if (contactFieldsIncomplete(trimmedContact)) {
     return buildOrderNewErrorResult(payload, CONTACT_REQUIRED_MESSAGE);
@@ -391,6 +434,7 @@ async function createOrder(payload) {
 
   let range;
   try {
+    // Parse and validate the requested booking range.
     range = parseDateRange(
       payload.pickupDate,
       payload.pickupTime,
@@ -404,6 +448,7 @@ async function createOrder(payload) {
     throw err;
   }
 
+  // Build a smaller command object that contains only the fields needed by the core logic.
   const command = {
     carId: payload.carId,
     pickupLocation: payload.pickupLocation,
@@ -415,6 +460,7 @@ async function createOrder(payload) {
   };
 
   try {
+    // Use a transaction when possible so Order + Car.dates stay synchronized.
     await runWithOptionalTransaction((session) =>
       createOrderCore({
         command,
@@ -424,6 +470,7 @@ async function createOrder(payload) {
     );
     return { success: true };
   } catch (err) {
+    // Recoverable form errors return a re-render payload instead of throwing upward.
     if (err.isOrderFormError) {
       return buildOrderNewErrorResult(payload, err.message);
     }
@@ -431,11 +478,14 @@ async function createOrder(payload) {
   }
 }
 
+// Transactional core for admin order creation.
 async function createOrderCore({ command, range, session }) {
+  // Admin must choose a car before creating an order.
   if (!command.carId) {
     throw new OrderFormError('CAR_REQUIRED', 'Car selection is required.');
   }
 
+  // Remove expired car ranges first so they do not create false overlap conflicts.
   await purgeExpired(command.carId, session);
   const carQuery = Car.findById(command.carId);
   if (session) {
@@ -448,6 +498,7 @@ async function createOrderCore({ command, range, session }) {
     throw err;
   }
 
+  // Check overlap against confirmed/booked car date windows.
   const overlapQuery = Car.findOne({
     _id: command.carId,
     dates: {
@@ -468,6 +519,7 @@ async function createOrderCore({ command, range, session }) {
     );
   }
 
+  // Also block admin creation when an active online reservation hold overlaps the same range.
   const reservationConflict = await findActiveReservationHold(
     command.carId,
     range.start,
@@ -478,6 +530,7 @@ async function createOrderCore({ command, range, session }) {
     throw new OrderFormError('RESERVATION_CONFLICT', RESERVATION_CONFLICT_MESSAGE);
   }
 
+  // Compute the authoritative price on the server side.
   const pricing = computeBookingPrice(
     car,
     range.start,
@@ -486,6 +539,7 @@ async function createOrderCore({ command, range, session }) {
     command.returnLocation
   );
 
+  // Build the final order payload to be persisted.
   const orderPayload = {
     carId: command.carId,
     pickupDate: range.start,
@@ -505,15 +559,18 @@ async function createOrderCore({ command, range, session }) {
     hotelName: command.hotelName,
   };
 
+  // Create the order either inside the transaction or normally, depending on environment support.
   if (session) {
     await Order.create([orderPayload], { session });
   } else {
     await Order.create(orderPayload);
   }
 
+  // Finally mirror the new booking range into `Car.dates`.
   await addRange(command.carId, range.start, range.end, session);
 }
 
+// Fetch one order with basic populated car info for the details page.
 async function getOrderDetails(id) {
   return Order.findById(id).populate(
     'carId',
@@ -521,6 +578,7 @@ async function getOrderDetails(id) {
   );
 }
 
+// Load the order plus the supporting car list needed by the edit form.
 async function getOrderEditData(id) {
   const order = await Order.findById(id).populate(
     'carId',
@@ -540,6 +598,7 @@ async function getOrderEditData(id) {
   };
 }
 
+// Try to recover the exact stored `Car.dates` range that corresponds to an order's previous booking.
 function extractStoredRange(carDoc, prevStart, prevEnd) {
   if (!carDoc || !Array.isArray(carDoc.dates) || !carDoc.dates.length) {
     return { storedStart: prevStart, storedEnd: prevEnd };
@@ -558,7 +617,9 @@ function extractStoredRange(carDoc, prevStart, prevEnd) {
   return { storedStart: prevStart, storedEnd: prevEnd };
 }
 
+// Public admin order-update entry point.
 async function updateOrder(orderId, payload) {
+  // Normalize contact fields first.
   const trimmedContact = trimContactDetails(payload);
   if (contactFieldsIncomplete(trimmedContact)) {
     return buildOrderEditErrorResult(
@@ -570,6 +631,7 @@ async function updateOrder(orderId, payload) {
 
   let range;
   try {
+    // Parse and validate the edited date range.
     range = parseDateRange(
       payload.pickupDate,
       payload.pickupTime,
@@ -584,6 +646,7 @@ async function updateOrder(orderId, payload) {
   }
 
   try {
+    // Run the update inside a transaction when available.
     await runWithOptionalTransaction((session) =>
       updateOrderCore({
         orderId,
@@ -595,6 +658,7 @@ async function updateOrder(orderId, payload) {
     );
     return { success: true };
   } catch (err) {
+    // Convert recoverable domain errors into edit-form re-render payloads.
     if (err.isOrderFormError) {
       let message = err.message || 'Error saving order';
       if (err.code === 'RESERVATION_CONFLICT') {
@@ -611,7 +675,9 @@ async function updateOrder(orderId, payload) {
   }
 }
 
+// Transactional core for admin order updates, including `Car.dates` synchronization.
 async function updateOrderCore({ orderId, payload, contact, range, session }) {
+  // Load the existing order first.
   const orderQuery = Order.findById(orderId);
   if (session) {
     orderQuery.session(session);
@@ -623,6 +689,7 @@ async function updateOrderCore({ orderId, payload, contact, range, session }) {
     throw err;
   }
 
+  // Capture the old car/date range so car availability can be updated correctly if anything changes.
   const prevCarId = existingOrder.carId;
   const prevStart =
     existingOrder.pickupDate instanceof Date
@@ -636,6 +703,7 @@ async function updateOrderCore({ orderId, payload, contact, range, session }) {
   let storedPrevStart = prevStart;
   let storedPrevEnd = prevEnd;
   try {
+    // Try to read the exact stored range from `Car.dates`.
     const prevCarQuery = Car.findById(prevCarId);
     if (session) {
       prevCarQuery.session(session);
@@ -648,6 +716,7 @@ async function updateOrderCore({ orderId, payload, contact, range, session }) {
     // ignore, fall back to prevStart/prevEnd
   }
 
+  // If no new carId was provided, keep the existing car.
   const newCarId =
     payload.carId && payload.carId.toString
       ? payload.carId.toString()
@@ -664,6 +733,7 @@ async function updateOrderCore({ orderId, payload, contact, range, session }) {
     throw err;
   }
 
+  // Detect whether the core booking dimensions actually changed.
   const sameCar = String(prevCarId) === String(newCarId);
   const sameStart = prevStart && range.start && prevStart.getTime() === range.start.getTime();
   const sameEnd = prevEnd && range.end && prevEnd.getTime() === range.end.getTime();
@@ -673,6 +743,7 @@ async function updateOrderCore({ orderId, payload, contact, range, session }) {
   const shouldRecalculatePrice =
     !sameCar || !sameStart || !sameEnd || !samePickupLoc || !sameReturnLoc;
 
+  // If the car or dates changed, block the update when an active online hold overlaps the new range.
   if (!sameCar || !sameStart || !sameEnd) {
     const reservationConflict = await findActiveReservationHold(
       newCarId,
@@ -688,6 +759,7 @@ async function updateOrderCore({ orderId, payload, contact, range, session }) {
     }
   }
 
+  // Fast path: if car and dates did not change, only update contact/location/price fields.
   if (sameCar && sameStart && sameEnd) {
     existingOrder.pickupLocation = payload.pickupLocation;
     existingOrder.returnLocation = payload.returnLocation;
@@ -698,6 +770,7 @@ async function updateOrderCore({ orderId, payload, contact, range, session }) {
     existingOrder.address = contact.address;
 
     if (shouldRecalculatePrice) {
+      // Location changes can still affect delivery/return fees even when the date range is unchanged.
       const pricing = computeBookingPrice(
         car,
         prevStart,
@@ -715,6 +788,7 @@ async function updateOrderCore({ orderId, payload, contact, range, session }) {
     return;
   }
 
+  // If the range changed on the same car, update the existing booked range in place.
   if (String(newCarId) === String(prevCarId)) {
     await updateRange(
       prevCarId,
@@ -725,6 +799,7 @@ async function updateOrderCore({ orderId, payload, contact, range, session }) {
       session
     );
   } else {
+    // If the order moved to a different car, move the booked range between car documents.
     await moveRange(
       prevCarId,
       newCarId,
@@ -736,6 +811,7 @@ async function updateOrderCore({ orderId, payload, contact, range, session }) {
     );
   }
 
+  // Persist the edited order fields after the car-date synchronization succeeded.
   existingOrder.carId = newCarId;
   existingOrder.pickupDate = range.start;
   existingOrder.pickupTime = payload.pickupTime;
@@ -750,16 +826,19 @@ async function updateOrderCore({ orderId, payload, contact, range, session }) {
   existingOrder.address = contact.address;
 
   const now = new Date();
+  // Orders whose return date is already in the past should be marked expired.
   if (range.end <= now) {
     existingOrder.status = 'expired';
     if (!existingOrder.expiredAt) {
       existingOrder.expiredAt = now;
     }
   } else {
+    // Otherwise the order remains active.
     existingOrder.status = 'active';
     existingOrder.expiredAt = undefined;
   }
 
+  // Recompute price whenever relevant booking inputs changed.
   if (shouldRecalculatePrice) {
     const pricing = computeBookingPrice(
       car,
@@ -777,6 +856,7 @@ async function updateOrderCore({ orderId, payload, contact, range, session }) {
   await existingOrder.save(sessionOptions(session));
 }
 
+// Soft-delete an order and remove its booked range from `Car.dates`.
 async function deleteOrder(orderId) {
   await runWithOptionalTransaction(async (session) => {
     const orderQuery = Order.findById(orderId);
@@ -786,6 +866,7 @@ async function deleteOrder(orderId) {
     const order = await orderQuery;
     if (!order) return;
 
+    // Resolve the order's previous date range so it can be removed from `Car.dates`.
     const prevStart =
       order.pickupDate instanceof Date
         ? order.pickupDate
@@ -798,6 +879,7 @@ async function deleteOrder(orderId) {
     let storedStart = prevStart;
     let storedEnd = prevEnd;
     try {
+      // Try to recover the exact stored range from the car document.
       const carQuery = Car.findById(order.carId);
       if (session) {
         carQuery.session(session);
@@ -810,6 +892,7 @@ async function deleteOrder(orderId) {
       // ignore
     }
 
+    // Remove the booked range from the car, then mark the order as deleted.
     await removeRange(order.carId, storedStart, storedEnd, session);
     order.isDeleted = true;
     order.deletedAt = new Date();
@@ -817,6 +900,7 @@ async function deleteOrder(orderId) {
   });
 }
 
+// Restore a soft-deleted order, re-adding its booking window if the car is still free.
 async function restoreOrder(orderId) {
   try {
     await runWithOptionalTransaction(async (session) => {
@@ -832,6 +916,7 @@ async function restoreOrder(orderId) {
         );
       }
 
+      // Parse the stored order dates back into concrete Date values.
       const start =
         order.pickupDate instanceof Date
           ? order.pickupDate
@@ -854,19 +939,23 @@ async function restoreOrder(orderId) {
         );
       }
 
+      // Clean stale ranges, then re-add this order's booking window.
       await purgeExpired(order.carId, session);
       await addRange(order.carId, start, end, session);
 
+      // Mark the order as restored.
       order.isDeleted = false;
       order.deletedAt = undefined;
 
       const now = new Date();
+      // Restored orders whose return date is already in the past should come back as expired.
       if (end <= now) {
         order.status = 'expired';
         if (!order.expiredAt) {
           order.expiredAt = now;
         }
       } else {
+        // Otherwise restore them as active unless a more specific status should be preserved.
         if (
           !order.status ||
           order.status === 'expired' ||
@@ -880,9 +969,11 @@ async function restoreOrder(orderId) {
       await order.save(sessionOptions(session));
     });
   } catch (err) {
+    // Preserve domain-specific restore errors.
     if (err.isOrderRestoreError) {
       throw err;
     }
+    // Convert overlap conflicts into a friendlier restore-specific domain error.
     if (err && err.code === 'OVERLAP') {
       throw new OrderRestoreError(
         'OVERLAP',
@@ -893,6 +984,7 @@ async function restoreOrder(orderId) {
   }
 }
 
+// Export the full admin order service surface used by admin controllers.
 module.exports = {
   getOrdersList,
   getExpiredOrders,

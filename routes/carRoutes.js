@@ -1,16 +1,25 @@
+// Express router – public landing, search, about и contact endpoints.
 const express = require('express');
+// Router instance – mount-ва се по-късно от server.js.
 const router = express.Router();
+// body validators – отхвърлят malformed form input преди controllers.
 const { body } = require('express-validator');
+// homeController – render на home page и филтрирани fleet списъци.
 const homeController = require('../controllers/homeController');
-const availableCarsController = require('../controllers/availableCarsController');
+const availableCarsController = require('../controllers/availableCars');
+// aboutController – статична about страница.
 const aboutController = require('../controllers/aboutController');
+// contactController – contact страница и form submission.
 const contactController = require('../controllers/contactController');
+// contactLimiter – защита на contact форма от spam.
 const { contactLimiter } = require('../middleware/rateLimit');
+// CSRF – за всички HTML форми в този route модул.
 const { csrfProtection, setCsrfToken } = require('../middleware/csrf');
 // Categories feature removed
 
-// Get all cars or filter cars based on query parameters
+// Home page – всички коли или филтрирани по query params; CSRF за search форма.
 router.get('/', csrfProtection, setCsrfToken, homeController.getHome);
+// Search – валидира time полета преди search controller.
 router.post('/postSearchCars', csrfProtection, setCsrfToken,[
     body('pickup-time')
       .notEmpty()
@@ -58,7 +67,5 @@ router.post(
 
 // Category page
 // category routes removed
-
- 
 
 module.exports = router;

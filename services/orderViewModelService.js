@@ -1,6 +1,6 @@
 /**
- * Build the base booking-related payload for the order page.
- * This focuses on dates, locations, and pricing; no contact data here.
+ * Създава base booking payload за order page.
+ * Дати, локации, pricing – без contact данни.
  */
 function buildBaseOrderPayload({
   pickupDateISO,
@@ -36,16 +36,8 @@ function buildBaseOrderPayload({
 }
 
 /**
- * Build the full view model for the order page.
- *
- * Inputs:
- * - car: Car document
- * - basePayload: result of buildBaseOrderPayload(...)
- * - options:
- *    - contact: optional object with fullName, phoneNumber, email, address, hotelName
- *    - existingReservation: optional existing reservation summary
- *    - message: optional message string
- *    - title: optional custom title (defaults to 'Order Car')
+ * Създава пълен view model за order page.
+ * car, basePayload, options (contact, existingReservation, message, title).
  */
 function buildOrderViewModel(car, basePayload, options = {}) {
   const {
@@ -87,6 +79,3 @@ module.exports = {
   buildBaseOrderPayload,
   buildOrderViewModel,
 };
-
-
-

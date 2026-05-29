@@ -1,8 +1,9 @@
+// Car model – bulk update за премахване на изтеклали booked-date ranges.
 const Car = require('../models/Car');
 
 /**
- * Clean Car.dates: normalize date types and remove past ranges (Europe/Sofia).
- * Keeps only entries whose endDate is after now in Sofia timezone.
+ * Почиства Car.dates: нормализира date типове и премахва изминали ranges (Europe/Sofia).
+ * Запазва само записи с endDate след now в Sofia timezone.
  */
 async function cleanUpOutdatedDates() {
   try {

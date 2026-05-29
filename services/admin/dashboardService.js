@@ -1,6 +1,9 @@
+// Order model – източник на данни за admin dashboard метрики.
 const Order = require('../../models/Order');
+// expireFinishedOrders – обновява expired orders преди dashboard stats.
 const { expireFinishedOrders } = require('../../utils/bookingSync');
 
+// Събира order списък и summary stats за admin dashboard.
 async function getDashboardData() {
   await expireFinishedOrders();
 
@@ -36,4 +39,3 @@ async function getDashboardData() {
 module.exports = {
   getDashboardData,
 };
-

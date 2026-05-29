@@ -9,11 +9,6 @@ const {
   checkCarAvailabilityForRange,
   createPendingReservation,
 } = require('../services/reservationService');
-const orderCarController = require('./orderCarController');
-
-// Re-export на order page handler за /orders.
-exports.getOrderCar = orderCarController.getOrderCar;
-
 // Освобождава активната резервация за session-а – JSON или redirect според caller.
 exports.releaseActiveReservation = async (req, res) => {
   const wantsJson =
