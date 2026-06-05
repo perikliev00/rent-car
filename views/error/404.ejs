@@ -57,6 +57,12 @@
           <p class="error-card-hint">
             If you typed the address manually, please check the spelling.
           </p>
+
+          <% if (correlationId) { %>
+            <p class="error-card-hint">
+              Reference ID: <code><%= correlationId %></code>
+            </p>
+          <% } %>
         </section>
       </div>
     </main>

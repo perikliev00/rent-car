@@ -6,7 +6,6 @@
   <title><%= title %></title>
   <link rel="stylesheet" href="/css/styles.css">
   <link rel="stylesheet" href="/css/footer.css">
-  <link rel="stylesheet" href="/vendor/flatpickr/flatpickr.min.css">
   <style>
     .card input, .card select { background:#0f0f0f; border:2px solid #ffd23f; color:#ffd23f; border-radius:8px; padding:.45rem .55rem; width:100%; box-sizing:border-box; }
     .card label { color:#ffd23f; font-weight:700; }
@@ -143,11 +142,8 @@
     </datalist>
   </main>
   <%- include('../partials/footer') %>
-  <script src="/vendor/flatpickr/flatpickr.min.js"></script>
   <script>
     (function(){
-      const dateOpts = { dateFormat: 'Y-m-d' };
-      const timeOpts = { enableTime: true, noCalendar: true, time_24hr: true, dateFormat: 'H:i' };
       const q = (sel) => document.querySelector(sel);
       const el = (name) => q(`input[name="${name}"]`) || q(`select[name="${name}"]`);
       const pickupDateEl = el('pickupDate');
@@ -162,11 +158,6 @@
       const totalEl      = el('totalPrice');
       const carEl        = el('carId');
       const submitBtn    = document.querySelector('button.btn-admin');
-
-      flatpickr(pickupDateEl, dateOpts);
-      flatpickr(returnDateEl, dateOpts);
-      flatpickr(pickupTimeEl, timeOpts);
-      flatpickr(returnTimeEl, timeOpts);
 
       const deliveryReturnPrices = {
         'office': 0,

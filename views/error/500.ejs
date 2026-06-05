@@ -57,6 +57,12 @@
           <p class="error-card-hint">
             If the issue persists, please reach out to our team for assistance.
           </p>
+
+          <% if (correlationId) { %>
+            <p class="error-card-hint">
+              Reference ID: <code><%= correlationId %></code>
+            </p>
+          <% } %>
         </section>
       </div>
     </main>

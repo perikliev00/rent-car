@@ -65,7 +65,7 @@ This ensures abandoned sessions never permanently block availability.
   - Inserts booked date range into `Car.dates`
   - Creates an `Order` record
   - Marks the reservation as `confirmed`
-- **Success page** (`GET /success`) may also trigger sync finalization (idempotent); the webhook remains the authoritative source for production
+- **Success page** (`GET /success`) verifies payment via Stripe (`payment_status === 'paid'`) and shows booking status; `Car.dates` and `Order` creation happen **only** in the webhook
 
 > ⚠️ **Production:** Ensure `STRIPE_WEBHOOK_SECRET` is set and that the webhook route is mounted with `express.raw({ type: 'application/json' })` so signature verification receives the raw body.
 

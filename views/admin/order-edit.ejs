@@ -6,7 +6,6 @@
   <title><%= title %></title>
   <link rel="stylesheet" href="/css/styles.css">
   <link rel="stylesheet" href="/css/footer.css">
-  <link rel="stylesheet" href="/vendor/flatpickr/flatpickr.min.css">
   <style>
     .card input, .card select {
       background:#0f0f0f;
@@ -153,7 +152,6 @@
   </datalist>
   </main>
   <%- include('../partials/footer') %>
-  <script src="/vendor/flatpickr/flatpickr.min.js"></script>
   <script>
     (function(){
       const q = (sel) => document.querySelector(sel);
@@ -170,12 +168,6 @@
       const returnEl     = byName('returnPrice');
       const totalEl      = byName('totalPrice');
       const carEl        = byName('carId');
-
-      // date/time widgets
-      flatpickr(pickupDateEl, { dateFormat: 'Y-m-d' });
-      flatpickr(returnDateEl, { dateFormat: 'Y-m-d' });
-      flatpickr(pickupTimeEl, { enableTime: true, noCalendar: true, time_24hr: true, dateFormat: 'H:i' });
-      flatpickr(returnTimeEl, { enableTime: true, noCalendar: true, time_24hr: true, dateFormat: 'H:i' });
 
       // same price table as Add Order
       const priceMap = {
